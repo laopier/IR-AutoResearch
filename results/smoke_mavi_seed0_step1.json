@@ -1,0 +1,42 @@
+{
+  "budget": {
+    "batch_size": 1,
+    "total_steps": 1
+  },
+  "data": {
+    "root": "/mnt/d/WSL/Project/CircuitNet-main/training_set_full_mini/IR_drop",
+    "train_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_train.csv",
+    "train_manifest_sha256": "e330de7eda42110e2485b9ba0a2e4059e3586f3a5845e71a9bf7b3364a56d423",
+    "train_samples": 3,
+    "validation_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_validation.csv",
+    "validation_manifest_sha256": "378c75b3ac655cfb054c04e4b3666c22c73e49c8ddbc591d76191731e4e669b4",
+    "validation_samples": 1
+  },
+  "description": "MAVI one-step end-to-end pipeline smoke; not a performance result",
+  "device": "cuda",
+  "git": {
+    "commit": "73184595efca3b8bf6ca8c35fca5bac736f6e975",
+    "dirty": false
+  },
+  "model": {
+    "parameter_count": 17063812,
+    "trainable_parameter_count": 17063812
+  },
+  "resources": {
+    "elapsed_seconds": 2.5538227489996643,
+    "peak_allocated_mib": 3231.076171875
+  },
+  "run_kind": "smoke",
+  "schema_version": 1,
+  "seed": 0,
+  "training": {
+    "final_learning_rate": 1e-07,
+    "final_loss": 22.832763671875,
+    "mean_loss": 22.832763671875
+  },
+  "validation": {
+    "mae_float": 0.23095592856407166,
+    "nrms_official": 0.47196296431819496,
+    "ssim_official": 0.5278498110658556
+  }
+}
