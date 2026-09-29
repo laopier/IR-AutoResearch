@@ -3,15 +3,39 @@
 import torch
 import torch.nn as nn
 
-from mmcv.cnn import constant_init, kaiming_init
-from mmcv.utils.parrots_wrapper import _BatchNorm
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 
 from collections import OrderedDict
+
+_BatchNorm = nn.modules.batchnorm._BatchNorm
+
+
+def constant_init(module, val, bias=0):
+    if hasattr(module, "weight") and module.weight is not None:
+        nn.init.constant_(module.weight, val)
+    if hasattr(module, "bias") and module.bias is not None:
+        nn.init.constant_(module.bias, bias)
+
+
+def kaiming_init(
+    module,
+    a=0,
+    mode="fan_out",
+    nonlinearity="leaky_relu",
+    bias=0,
+):
+    if hasattr(module, "weight") and module.weight is not None:
+        nn.init.kaiming_normal_(
+            module.weight,
+            a=a,
+            mode=mode,
+            nonlinearity=nonlinearity,
+        )
+    if hasattr(module, "bias") and module.bias is not None:
+        nn.init.constant_(module.bias, bias)
 
 def load_state_dict(module, state_dict, strict=False, logger=None):
     unexpected_keys = []
