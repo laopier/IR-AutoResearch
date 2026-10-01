@@ -1,0 +1,11 @@
+{
+  "python": "3.11.15",
+  "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "torch": "2.11.0+cu128",
+  "numpy": "2.4.6",
+  "opencv": "5.0.0",
+  "cuda_runtime": "12.8",
+  "cudnn": 91900,
+  "gpu": "NVIDIA GeForce RTX 3070 Laptop GPU",
+  "torch_threads": 2
+}

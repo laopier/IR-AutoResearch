@@ -1,0 +1,65 @@
+{
+  "type": "object",
+  "properties": {
+    "hypothesis": {
+      "type": "string"
+    },
+    "change": {
+      "type": "string"
+    },
+    "expected_effect": {
+      "type": "string"
+    },
+    "risk": {
+      "type": "string"
+    },
+    "controlled_variables": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "plan": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "edits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "enum": [
+              "train/experiment.py"
+            ]
+          },
+          "old": {
+            "type": "string"
+          },
+          "new": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "old",
+          "new"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "hypothesis",
+    "change",
+    "expected_effect",
+    "risk",
+    "controlled_variables",
+    "plan",
+    "edits"
+  ],
+  "additionalProperties": false
+}

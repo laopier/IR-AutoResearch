@@ -1,3 +1,23 @@
 __pycache__/
 *.py[cod]
 .vscode/
+
+# Local environments, credentials and datasets
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+auth.json
+*.pem
+*.key
+data/
+datasets/
+*.npy
+
+# Large model artifacts are backed up as private release assets
+*.pt
+*.pth
+*.ckpt
+*.zip
+!results/**/source_snapshot.zip

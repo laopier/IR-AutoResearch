@@ -1,0 +1,101 @@
+{
+  "status": "completed",
+  "group": "B0",
+  "scope": "mini",
+  "performance_claims_allowed": false,
+  "seed": 0,
+  "steps": 100,
+  "batch_size": 2,
+  "lr_horizon_steps": 200000,
+  "source": {
+    "git": {
+      "commit": "48b4fc4c2f2cbe9f59752311761eb47e0f45b33e",
+      "status": "?? b0/\n?? program/README.md\n?? program/policy.json\n?? results/b0_mini_20261001_seed0_steps100/",
+      "dirty": true
+    },
+    "file_sha256": {
+      "b0/__init__.py": "fbb22a1a82feb81e70349bd61390bc5568caa4ff222151843e0607faee3c0d3e",
+      "b0/run.py": "cd555a846368fd1e9d46b28bc5d52fe6adc6e28fb06b230e864764f065a89f5c",
+      "prepare/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "prepare/dataset.py": "a2296f725a3e66b9c9aa98722f1639160865252fcb9f14fc0db7d8183a763d28",
+      "prepare/evaluator.py": "e99cda574068f5369ee5b09b6fe81b892f8d9358300661094b32e8caf2566a13",
+      "prepare/manifests/smoke_train.csv": "e330de7eda42110e2485b9ba0a2e4059e3586f3a5845e71a9bf7b3364a56d423",
+      "prepare/manifests/smoke_validation.csv": "378c75b3ac655cfb054c04e4b3666c22c73e49c8ddbc591d76191731e4e669b4",
+      "prepare/manifests/train_N28_seed0.csv": "dfc7f62a9a1d680314fd9c18abbed5fb261466746c53937373a2d422a6355340",
+      "prepare/manifests/validation_N28_seed0.csv": "5a50b57d38b8c2f31b78c9775c3c97941c7682e6b1029514eae968fcf499ccfd",
+      "prepare/split_manifest.py": "9a29f0942b54b57de1eeb7bffba50d93f4dd1f49ab42e9a82b8226317e472e84",
+      "program/README.md": "22b90b9f2335a5b6ddecd7fd3f9b0c8f915df8440dfe149b6f7753bd8b915d66",
+      "program/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "program/policy.json": "0cd78537b6bdd892e04208a64c9253beae9b211125ac23b934aafc74cf76e2af",
+      "program/runner.py": "1ddf426eb0f3f3cf0eba45be7e3d9bc94833777508051091c571087dda961ff4",
+      "train/experiment.py": "d976bb258896731ba066a7979b99c6d8e4c27dd8fbd5e79735888dd8d22b4ef2",
+      "train/mavi.py": "e5ab22fb7f2433761cabf95ab073ed8e45633731f51d02a0053c4ef6fa9672b3"
+    },
+    "snapshot_sha256": "0ead399af4bb3c674da8ef35fbb8fc4009369158c1df590b905b7f8a7d19c172"
+  },
+  "data": {
+    "train": {
+      "samples": 3,
+      "spatial_shapes": {
+        "(256, 256)": 3
+      },
+      "manifest_sha256": "e330de7eda42110e2485b9ba0a2e4059e3586f3a5845e71a9bf7b3364a56d423"
+    },
+    "validation": {
+      "samples": 1,
+      "spatial_shapes": {
+        "(256, 256)": 1
+      },
+      "manifest_sha256": "378c75b3ac655cfb054c04e4b3666c22c73e49c8ddbc591d76191731e4e669b4"
+    },
+    "finite_values_checked_in_preflight": true,
+    "design_isolation_verified": false
+  },
+  "environment": {
+    "python": "3.11.15",
+    "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "torch": "2.11.0+cu128",
+    "numpy": "2.4.6",
+    "opencv": "5.0.0",
+    "cuda_runtime": "12.8",
+    "cudnn": 91900,
+    "gpu": "NVIDIA GeForce RTX 3070 Laptop GPU",
+    "torch_threads": 2
+  },
+  "initial_validation": {
+    "mae_float": 0.23094326257705688,
+    "nrms_official": 0.47196296431819496,
+    "ssim_official": 0.5278498110658556
+  },
+  "validation": {
+    "mae_float": 0.08674663305282593,
+    "nrms_official": 0.19584767627261543,
+    "ssim_official": 0.6260466334100185
+  },
+  "checkpoint_reload_validation": {
+    "mae_float": 0.08674663305282593,
+    "nrms_official": 0.19584767627261543,
+    "ssim_official": 0.6260466334100185
+  },
+  "checkpoint_reload_passed": true,
+  "training": {
+    "initial_loss": 25.8171443939209,
+    "final_loss": 6.074148178100586,
+    "mean_loss": 9.320981688499451,
+    "last_update_lr": 0.00019999987914549094
+  },
+  "model": {
+    "parameter_count": 17063812
+  },
+  "resources": {
+    "elapsed_seconds": 421.1318570569997,
+    "training_seconds": 417.14195263700003,
+    "single_gpu_training_hours": 0.1158727646213889,
+    "peak_allocated_mib": 6363.0185546875
+  },
+  "checkpoint": {
+    "path": "checkpoint_final.pt",
+    "sha256": "be72c21c38458362cca856850964a885726dc1f51f8b2b39ff3c768d7e3695cf",
+    "weights_only_no_optimizer_resume": true
+  }
+}

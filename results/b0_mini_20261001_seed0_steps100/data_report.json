@@ -1,0 +1,18 @@
+{
+  "train": {
+    "samples": 3,
+    "spatial_shapes": {
+      "(256, 256)": 3
+    },
+    "manifest_sha256": "e330de7eda42110e2485b9ba0a2e4059e3586f3a5845e71a9bf7b3364a56d423"
+  },
+  "validation": {
+    "samples": 1,
+    "spatial_shapes": {
+      "(256, 256)": 1
+    },
+    "manifest_sha256": "378c75b3ac655cfb054c04e4b3666c22c73e49c8ddbc591d76191731e4e669b4"
+  },
+  "finite_values_checked_in_preflight": true,
+  "design_isolation_verified": false
+}

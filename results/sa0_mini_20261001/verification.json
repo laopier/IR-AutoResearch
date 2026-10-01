@@ -1,0 +1,9 @@
+{
+  "same_sample_sequence": true,
+  "same_lr_sequence": true,
+  "same_steps_batch_seed": true,
+  "original_training_sources_unchanged": true,
+  "checkpoint_hashes_match": true,
+  "isolated_workspace_clean": true,
+  "frozen_data_and_trusted_sources_match": true
+}

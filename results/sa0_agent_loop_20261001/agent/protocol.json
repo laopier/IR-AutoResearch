@@ -1,0 +1,9 @@
+{
+  "max_model_calls": 2,
+  "max_seconds_per_call": 180,
+  "code_edit_authority": "controller applies validated exact replacements",
+  "first_demo_edit_surface": "one compute_loss or build_optimizer change",
+  "source_sha256": "7ff5fba226634cb4156f7c83b3edaefacb9a9d27f08e1f5bf5ed153225bbead7",
+  "scope": "automatic one-candidate integration rehearsal; not formal SA0",
+  "formal_independent_sessions_completed": 0
+}

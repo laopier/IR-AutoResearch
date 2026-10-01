@@ -1,0 +1,29 @@
+{
+  "matched_training_sample_and_lr_sequences": true,
+  "original_training_sources_unchanged": true,
+  "checkpoint_hashes_match": true,
+  "frozen_data_and_trusted_sources_match": true,
+  "isolated_workspace_clean": true,
+  "integration_source_hash_match": true,
+  "completed_model_calls": 2,
+  "model_usage": {
+    "01_proposal": {
+      "input_tokens": 12205,
+      "cached_input_tokens": 0,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 778,
+      "reasoning_output_tokens": 54
+    },
+    "02_feedback": {
+      "input_tokens": 12902,
+      "cached_input_tokens": 0,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 527,
+      "reasoning_output_tokens": 0
+    }
+  },
+  "model_call_wall_seconds": 66.08840120000059,
+  "gpu_process_wall_seconds": 47.25297398400107,
+  "monetary_cost": null,
+  "formal_independent_sessions_completed": 0
+}

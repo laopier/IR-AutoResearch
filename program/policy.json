@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "path_policy": {
+    "agent_mutable": [
+      "train/mavi.py",
+      "train/experiment.py"
+    ],
+    "immutable": [
+      "prepare/",
+      "program/",
+      "tests/"
+    ],
+    "append_only": [
+      "results/"
+    ]
+  },
+  "result_policy": {
+    "require_clean_git": true,
+    "reject_existing_output": true,
+    "required_metrics": [
+      "mae_float",
+      "nrms_official",
+      "ssim_official"
+    ],
+    "required_resource_fields": [
+      "elapsed_seconds",
+      "peak_allocated_mib"
+    ]
+  },
+  "stages": {
+    "smoke": {
+      "enabled": true,
+      "max_steps": 10,
+      "max_batch_size": 1,
+      "allowed_seeds": [
+        0
+      ],
+      "train_manifest_sha256": "e330de7eda42110e2485b9ba0a2e4059e3586f3a5845e71a9bf7b3364a56d423",
+      "validation_manifest_sha256": "378c75b3ac655cfb054c04e4b3666c22c73e49c8ddbc591d76191731e4e669b4",
+      "performance_claims_allowed": false
+    },
+    "search": {
+      "enabled": false,
+      "reason": "Full N28 data and formal baseline are not ready."
+    },
+    "confirmation": {
+      "enabled": false,
+      "reason": "No candidate has passed formal search."
+    },
+    "final_test": {
+      "enabled": false,
+      "reason": "Final test requires explicit human approval."
+    }
+  },
+  "seed_policy": {
+    "exploration": [
+      0
+    ],
+    "confirmation": [
+      0,
+      1,
+      2
+    ]
+  }
+}

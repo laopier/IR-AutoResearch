@@ -1,0 +1,34 @@
+{
+  "data_root": "/mnt/d/WSL/Project/CircuitNet-main/training_set_full_mini/IR_drop",
+  "train_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_train.csv",
+  "validation_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_validation.csv",
+  "output": "/mnt/d/Project/IR-AutoResearch/results/b0_mini_20261001_seed0_steps100",
+  "scope": "mini",
+  "steps": 100,
+  "lr_horizon_steps": 200000,
+  "batch_size": 2,
+  "seed": 0,
+  "device": "cuda",
+  "num_workers": 0,
+  "cpu_threads": 2,
+  "checkpoint_every": 10000,
+  "log_every": 10,
+  "preflight_only": false,
+  "check_values": true,
+  "recipe": {
+    "model": "MAVI(in_channels=1,out_channels=4,bilinear=False)",
+    "optimizer": "AdamW",
+    "lr": 0.0002,
+    "weight_decay": 0.01,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "loss": "100 * mean L1",
+    "augmentation": null,
+    "precision": "float32",
+    "drop_last": true,
+    "lr_set_before_update": true,
+    "validation_batch_size": 1
+  }
+}

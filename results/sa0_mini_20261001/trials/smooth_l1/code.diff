@@ -1,0 +1,23 @@
+diff --git a/train/experiment.py b/train/experiment.py
+index c3a7d93..264ee2e 100644
+--- a/train/experiment.py
++++ b/train/experiment.py
+@@ -47,9 +47,10 @@ def compute_loss(
+             f"does not match target shape {tuple(target.shape)}"
+         )
+ 
+-    return 100.0 * functional.l1_loss(
++    return 100.0 * functional.smooth_l1_loss(
+         prediction,
+         target,
++        beta=0.1,
+     )
+ 
+ 
+@@ -94,4 +95,4 @@ def train_batch(
+ 
+     optimizer.step()
+ 
+-    return float(loss.detach().item())
+\ No newline at end of file
++    return float(loss.detach().item())

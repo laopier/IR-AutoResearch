@@ -1,0 +1,33 @@
+{
+  "commit": "e9d68fe5e587e7b2669ba39f762e4939afe6210c",
+  "dirty": false,
+  "file_sha256": {
+    ".gitignore": "6feaded4e28ea86e001a6751b4e3d960e8b7c31b9616ff9936b79297086e809b",
+    "CIRCUITNET_LICENSE": "91fa9c5a2de7e7b4f39411723fa913111a1d90c56271ab3b8ad0d00b14573bfb",
+    "prepare/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "prepare/dataset.py": "a2296f725a3e66b9c9aa98722f1639160865252fcb9f14fc0db7d8183a763d28",
+    "prepare/evaluator.py": "e99cda574068f5369ee5b09b6fe81b892f8d9358300661094b32e8caf2566a13",
+    "prepare/manifests/smoke_train.csv": "e330de7eda42110e2485b9ba0a2e4059e3586f3a5845e71a9bf7b3364a56d423",
+    "prepare/manifests/smoke_validation.csv": "378c75b3ac655cfb054c04e4b3666c22c73e49c8ddbc591d76191731e4e669b4",
+    "prepare/manifests/train_N28_seed0.csv": "dfc7f62a9a1d680314fd9c18abbed5fb261466746c53937373a2d422a6355340",
+    "prepare/manifests/validation_N28_seed0.csv": "5a50b57d38b8c2f31b78c9775c3c97941c7682e6b1029514eae968fcf499ccfd",
+    "prepare/split_manifest.py": "9a29f0942b54b57de1eeb7bffba50d93f4dd1f49ab42e9a82b8226317e472e84",
+    "program/README.md": "22b90b9f2335a5b6ddecd7fd3f9b0c8f915df8440dfe149b6f7753bd8b915d66",
+    "program/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "program/policy.json": "0cd78537b6bdd892e04208a64c9253beae9b211125ac23b934aafc74cf76e2af",
+    "program/runner.py": "1ddf426eb0f3f3cf0eba45be7e3d9bc94833777508051091c571087dda961ff4",
+    "tests/test_data_model_integration.py": "98627251c643b1c8da8c9fdcbfae13a434a647d6a3b34c9703e39d8c0e1f3560",
+    "tests/test_dataset.py": "ff1fc447c822a8e45fae2e0741990e40fee531edecfda0fe5d4d6bfe7799b7b4",
+    "tests/test_evaluator.py": "c5f431e012b0424c2d704adf6c0eaa9357806863f5ac48364886ded0bfe2cd94",
+    "tests/test_mavi_contract.py": "c97e493fc6d2cad2875fd4e98592ad0e2824bfb284be0160f3b02a565e08ca12",
+    "tests/test_runner.py": "4fa3bf0c2a7ccc6cef923decec292a5d90bb1a79e7bc2ede0bffcdd6a1993b03",
+    "tests/test_split_manifest.py": "7fde1d943e482d685511761c63de503d65ed517c4e39299ed1af284f81283b8c",
+    "tests/test_train_experiment.py": "ef0d6a8691dce07b0960b2c2caaac15a8ba0d777a9d8738da8c444793188fc78",
+    "train/experiment.py": "9cecbe0fc677d2dc8f9fc43d22950dee8666cf9a87bf2fdd90ef9ca066b83260",
+    "train/mavi.py": "e5ab22fb7f2433761cabf95ab073ed8e45633731f51d02a0053c4ef6fa9672b3"
+  },
+  "changed_paths": [
+    "train/experiment.py"
+  ],
+  "role": "candidate"
+}

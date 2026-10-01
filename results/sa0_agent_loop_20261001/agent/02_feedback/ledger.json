@@ -1,0 +1,13 @@
+{
+  "elapsed_seconds": 28.707648900001004,
+  "usage": {
+    "input_tokens": 12902,
+    "cached_input_tokens": 0,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 527,
+    "reasoning_output_tokens": 0
+  },
+  "monetary_cost": null,
+  "error": null,
+  "note": "CLI reported tokens where available; no monetary billing measurement."
+}

@@ -1,0 +1,23 @@
+{
+  "decision": "keep_for_rehearsal",
+  "checks": {
+    "mae_improved": true,
+    "nrms_not_worse": true,
+    "ssim_not_worse": true,
+    "parameter_guard": true,
+    "memory_guard": true
+  },
+  "baseline_metrics": {
+    "mae_float": 0.2331332564353943,
+    "nrms_official": 0.47196296431819496,
+    "ssim_official": 0.5278498110658556
+  },
+  "candidate_metrics": {
+    "mae_float": 0.23312944173812866,
+    "nrms_official": 0.47196296431819496,
+    "ssim_official": 0.5278498110658556
+  },
+  "selected_commit": "cc5809dab475f30691868e16677d0f09143edf4c",
+  "scope": "mini flow demonstration; not evidence of model superiority",
+  "independent_autoresearch_sessions_completed": 0
+}

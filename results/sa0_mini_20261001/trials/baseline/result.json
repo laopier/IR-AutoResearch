@@ -1,0 +1,63 @@
+{
+  "role": "baseline",
+  "commit": "3bbad74c95407f8a1b49ca59948566ee6f0a1ae4",
+  "protocol": {
+    "stage": "mini_rehearsal",
+    "performance_claims_allowed": false,
+    "mutable_paths": [
+      "train/experiment.py",
+      "train/mavi.py"
+    ],
+    "steps": 5,
+    "batch_size": 1,
+    "seed": 0,
+    "lr_horizon_steps": 200000,
+    "max_trials": 2,
+    "trial_timeout_seconds": 120,
+    "session_compute_wall_seconds": 240,
+    "max_candidates": 1,
+    "selection_rule": "strictly lower mae; NRMS not higher, SSIM not lower; parameters and peak memory <= 1.10x baseline",
+    "selection_scope": "demo only; not a formal search threshold",
+    "network_policy": "offline; Python audit guards in workers; not OS sandbox",
+    "validation_policy": "separate evaluation process; validation labels absent from training view",
+    "agent_api_tokens": null,
+    "agent_api_cost": null,
+    "api_accounting_note": "Desktop agent usage not measured; do not report zero cost."
+  },
+  "train": {
+    "mode": "train",
+    "steps_completed": 5,
+    "parameter_count": 17063812,
+    "elapsed_seconds": 7.002338674999919,
+    "peak_allocated_mib": 3291.2685546875,
+    "environment": {
+      "python": "3.11.15",
+      "torch": "2.11.0+cu128",
+      "numpy": "2.4.6",
+      "cuda": "12.8",
+      "gpu": "NVIDIA GeForce RTX 3070 Laptop GPU"
+    },
+    "python_audit_guard_enabled": true
+  },
+  "evaluation": {
+    "mode": "evaluate",
+    "metrics": {
+      "mae_float": 0.2331332564353943,
+      "nrms_official": 0.47196296431819496,
+      "ssim_official": 0.5278498110658556
+    },
+    "samples": 1,
+    "parameter_count": 17063812,
+    "elapsed_seconds": 1.0794213110002602,
+    "peak_allocated_mib": 844.3779296875,
+    "environment": {
+      "python": "3.11.15",
+      "torch": "2.11.0+cu128",
+      "numpy": "2.4.6",
+      "cuda": "12.8",
+      "gpu": "NVIDIA GeForce RTX 3070 Laptop GPU"
+    },
+    "python_audit_guard_enabled": true
+  },
+  "checkpoint_sha256": "f57634308b9a5b2bf96abd74b9097241334d6d30c1fbf5e72d9015300e269620"
+}

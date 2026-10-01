@@ -1,0 +1,14 @@
+diff --git a/train/experiment.py b/train/experiment.py
+index c3a7d93..a8185ae 100644
+--- a/train/experiment.py
++++ b/train/experiment.py
+@@ -47,9 +47,10 @@ def compute_loss(
+             f"does not match target shape {tuple(target.shape)}"
+         )
+ 
+-    return 100.0 * functional.l1_loss(
++    return 100.0 * functional.smooth_l1_loss(
+         prediction,
+         target,
++        beta=0.01,
+     )

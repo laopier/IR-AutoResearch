@@ -1,0 +1,17 @@
+{
+  "hypothesis": "Smooth L1 在小残差区间提供连续变化的梯度，可能使初期优化更平稳，从而降低相同步数的验证 MAE。这里只检验演练流程，不预期五步即可证明该假设。",
+  "change": "Replace mean L1 with mean Smooth L1, beta=0.1; retain the 100x loss multiplier.",
+  "expected_effect": "验证 MAE 下降，NRMS 与 SSIM 不恶化，参数量不变；损失数值不能与 L1 数值直接比较。",
+  "risk": "小残差梯度变小可能拖慢学习；均值损失仍可能忽略少数 IR-drop 热点；五步和单个验证样本有很大偶然性。",
+  "controlled_variables": [
+    "model and initialization",
+    "train and validation manifests",
+    "seed=0",
+    "steps=5",
+    "batch_size=1",
+    "optimizer hyperparameters",
+    "cosine horizon=200000",
+    "evaluation implementation",
+    "device and precision"
+  ]
+}

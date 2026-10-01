@@ -1,0 +1,4 @@
+# Tested with Python 3.11.15 and CUDA-enabled PyTorch.
+# Install matching PyTorch separately for the server driver; see README.
+numpy==2.4.6
+opencv-python-headless==5.0.0.93

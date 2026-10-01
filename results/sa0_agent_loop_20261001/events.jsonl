@@ -1,0 +1,8 @@
+{"event": "session_started", "unix_time": 1790845705.3622258, "baseline_commit": "c660efef09f85defc58ed28c12497404f25fb1c7", "steps": 5}
+{"event": "trial_started", "unix_time": 1790845711.5029294, "trial": "baseline", "role": "baseline", "commit": "c660efef09f85defc58ed28c12497404f25fb1c7"}
+{"event": "trial_finished", "unix_time": 1790845735.0083134, "trial": "baseline", "status": "completed", "charged_wall_seconds": 23.492910904000382, "error": null}
+{"event": "hypothesis_registered", "unix_time": 1790845774.2391365, "sha256": "e0807b607cd4154a8b312fbdae1ce6ae2952c3e97ad6ca7b8ed4276ba00229b4"}
+{"event": "candidate_committed", "unix_time": 1790845776.3648553, "commit": "e9d68fe5e587e7b2669ba39f762e4939afe6210c", "changed_paths": ["train/experiment.py"]}
+{"event": "trial_started", "unix_time": 1790845781.8432724, "trial": "agent_candidate", "role": "candidate", "commit": "e9d68fe5e587e7b2669ba39f762e4939afe6210c"}
+{"event": "trial_finished", "unix_time": 1790845805.6076803, "trial": "agent_candidate", "status": "completed", "charged_wall_seconds": 23.76006308000069, "error": null}
+{"event": "decision", "unix_time": 1790845807.6002483, "decision": "keep_for_rehearsal", "checks": {"mae_improved": true, "nrms_not_worse": true, "ssim_not_worse": true, "parameter_guard": true, "memory_guard": true}, "baseline_metrics": {"mae_float": 0.2331332564353943, "nrms_official": 0.47196296431819496, "ssim_official": 0.5278498110658556}, "candidate_metrics": {"mae_float": 0.23312705755233765, "nrms_official": 0.47196296431819496, "ssim_official": 0.5278498110658556}, "selected_commit": "e9d68fe5e587e7b2669ba39f762e4939afe6210c", "scope": "mini flow demonstration; not evidence of model superiority", "independent_autoresearch_sessions_completed": 0}

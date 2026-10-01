@@ -1,0 +1,36 @@
+{
+  "type": "object",
+  "properties": {
+    "interpretation": {
+      "type": "string"
+    },
+    "hypothesis_supported": {
+      "type": "string",
+      "enum": [
+        "inconclusive",
+        "contradicted",
+        "limited_support"
+      ]
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "next_hypothesis": {
+      "type": "string"
+    },
+    "next_validation": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "interpretation",
+    "hypothesis_supported",
+    "limitations",
+    "next_hypothesis",
+    "next_validation"
+  ],
+  "additionalProperties": false
+}
