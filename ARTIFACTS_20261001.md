@@ -3,6 +3,8 @@
 大型权重作为 private 仓库 Release `snapshot-20261001` 的附件保存，不加入 Git 对象历史。
 原始训练数据留在本地/服务器；本仓库保留对应清单、结果和哈希。
 
+下载位置：[private Release](https://github.com/laopier/IR-AutoResearch/releases/tag/snapshot-20261001)。
+
 | Release 附件 | 大小（字节） | SHA256 |
 | --- | ---: | --- |
 | b0_mini_seed0_steps100_checkpoint.pt | 68315393 | `be72c21c38458362cca856850964a885726dc1f51f8b2b39ff3c768d7e3695cf` |
