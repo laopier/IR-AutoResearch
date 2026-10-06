@@ -43,25 +43,7 @@ bash b0/launch_server.sh DATA_ROOT NEW_OUTPUT_DIR --preflight-only
 模型调用需要已有登录。新的实验必须使用新的输出目录，不能覆盖已有记录。
 SA0禁用研究检索，SA1开放内置web_search；远程模型调用所需网络不等于研究检索权限。
 
-## 在 Mac 上阅读代码
 
-```bash
-git clone https://github.com/laopier/IR-AutoResearch.git
-cd IR-AutoResearch
-# 已克隆仓库：git pull --ff-only
-```
-
-推荐按 `sa0/controller.py` → `sa0/session.py` → `sa0/proposal.py` →
-`sa0/experiment.py` → `sa0/decision.py` 阅读，再看B1和SA1如何复用这些接口。
-Windows/WSL本机路径仍留在实验配置中；Mac上直接阅读即可，不能原样运行CUDA训练。
-数据、最新results历史、checkpoint、CLI登录信息不上传，干净克隆不会自动包含历史结果。
-运行前须改数据、输出、CLI路径；没有旧基线/历史目录时设baseline_source_session为null，
-SA0/SA1的history_sessions与history_results为空数组。真实训练需要CUDA环境。
-无需真实模型或GPU的流程检查：
-
-```bash
-python -m unittest sa0.test_session sa1.test_sa1 b1.test_b1 -v
-```
 
 ## 版本与产物
 
