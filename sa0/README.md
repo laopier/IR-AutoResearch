@@ -1,5 +1,8 @@
 # SA0 离线单 agent 自主研究
 
+默认入口已升级到假设驱动v2，读取research_config.json，详见[RESEARCH_V2.md](RESEARCH_V2.md)。
+下文的config.json/SA0_GUIDE.md是旧版流程说明，使用`--legacy`访问。
+
 ```bash
 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 python -m sa0.controller
 ```

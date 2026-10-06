@@ -1,0 +1,55 @@
+{
+  "condition": "SA0",
+  "low_seeds": [
+    0,
+    1
+  ],
+  "batch_size": 2,
+  "worker_timeout_seconds": 3600,
+  "max_exploration_tasks": 10,
+  "session_dir": "/mnt/d/Project/IR-AutoResearch/results/sa0_research_v2_001",
+  "stages": {
+    "low": {
+      "steps": 20,
+      "val_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_validation.csv",
+      "train_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_train.csv"
+    },
+    "smoke": {
+      "steps": 2,
+      "val_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_validation.csv",
+      "train_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_train.csv"
+    },
+    "full": {
+      "steps": 100,
+      "val_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_validation.csv",
+      "train_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_train.csv"
+    },
+    "confirmation": {
+      "steps": 100,
+      "val_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_validation.csv",
+      "train_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_train.csv"
+    }
+  },
+  "agent": {
+    "model": "gpt-6.1-sol",
+    "timeout_seconds": 900,
+    "codex_path": "/mnt/c/Users/皮/AppData/Local/OpenAI/Codex/bin/f544b3844e0f14e9/codex.exe",
+    "max_prompt_chars": 150000,
+    "reasoning_effort": "low",
+    "web_search": "disabled"
+  },
+  "mode": "workflow_validation",
+  "device": "cuda",
+  "data_root": "/mnt/d/WSL/Project/CircuitNet-main/training_set_full_mini/IR_drop",
+  "baseline_initial_lr": 0.0002,
+  "initial_lr_upper_bound": 0.001,
+  "version": 2,
+  "max_gpu_tasks": 20,
+  "val_batch_size": 1,
+  "confirmation_seeds": [
+    0,
+    1,
+    2
+  ],
+  "lr_horizon_steps": 200000
+}

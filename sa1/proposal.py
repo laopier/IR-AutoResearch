@@ -7,7 +7,10 @@ def validate_response(value):
     if not isinstance(value, dict) or set(value) != {"proposal", "research"}:
         raise ValueError("SA1回复必须且只能包含proposal和research")
     proposal = validate_proposal(value["proposal"])
-    research = value["research"]
+    return proposal, validate_research(value["research"])
+
+
+def validate_research(research):
     if not isinstance(research, dict) or set(research) != {"status", "summary", "sources"}:
         raise ValueError("research必须包含status、summary、sources")
     if research["status"] not in {"searched", "not_needed", "unavailable"}:
@@ -31,4 +34,4 @@ def validate_response(value):
         raise ValueError("已检索必须记录来源")
     if research["status"] != "searched" and research["sources"]:
         raise ValueError("未检索不能声称有本轮检索来源")
-    return proposal, research
+    return research

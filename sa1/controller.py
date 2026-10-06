@@ -48,6 +48,10 @@ def trial_metadata(folder):
 
 
 def main():
+    if "--legacy" not in sys.argv:
+        from sa0.research.session import Workflow
+        Workflow(sys.modules[__name__], read_json(ROOT / "sa1/research_config.json")).run()
+        return
     protocol = read_json(ROOT / "sa1/config.json")
     if protocol.get("condition") != "SA1" or protocol["agent"].get("web_search") != "live":
         raise ValueError("SA1必须声明condition=SA1及agent.web_search=live")

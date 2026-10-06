@@ -1,5 +1,5 @@
 {
-  "session_dir": "/mnt/d/Project/IR-AutoResearch/results/sa0_autonomous_003",
+  "session_dir": "/mnt/d/Project/IR-AutoResearch/results/sa0_autonomous_004",
   "baseline_source_session": "/mnt/d/Project/IR-AutoResearch/results/sa0_autonomous_001",
   "data_root": "/mnt/d/WSL/Project/CircuitNet-main/training_set_full_mini/IR_drop",
   "train_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_train.csv",

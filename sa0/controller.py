@@ -320,6 +320,10 @@ def build_request(protocol: dict) -> str:
     return request
 
 def main():
+    if "--legacy" not in sys.argv:
+        from sa0.research.session import Workflow
+        Workflow(sys.modules[__name__], read_json(ROOT / "sa0/research_config.json")).run()
+        return
     from sa0.session import run_session
     run_session(sys.modules[__name__], read_json(ROOT / "sa0/config.json"))
 
