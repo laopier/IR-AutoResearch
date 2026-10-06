@@ -1,0 +1,55 @@
+{
+  "session_dir": "/mnt/d/Project/IR-AutoResearch/results/sa0_autonomous_003",
+  "baseline_source_session": "/mnt/d/Project/IR-AutoResearch/results/sa0_autonomous_001",
+  "data_root": "/mnt/d/WSL/Project/CircuitNet-main/training_set_full_mini/IR_drop",
+  "train_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_train.csv",
+  "val_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_validation.csv",
+  "seed": 0,
+  "steps": 100,
+  "batch_size": 2,
+  "val_batch_size": 1,
+  "lr_horizon_steps": 200000,
+  "baseline_initial_lr": 0.0002,
+  "max_trials": 2,
+  "initial_lr_upper_bound": 0.001,
+  "process_timeout_seconds": 1800,
+  "budget_status": "test_limits",
+  "max_training_seconds": 1300,
+  "max_peak_allocated_mib": 6500,
+  "allowed_kinds": ["learning_rate", "model"],
+  "first_proposal_path": null,
+  "max_agent_calls": 2,
+  "max_session_process_seconds": 5400,
+  "stop_after_failures": 2,
+  "history_sessions": [
+    "/mnt/d/Project/IR-AutoResearch/results/sa0_session_001",
+    "/mnt/d/Project/IR-AutoResearch/results/sa0_model_100_001"
+  ],
+  "history_results": [
+    {
+      "baseline_result": "/mnt/d/Project/IR-AutoResearch/results/lr_baseline_100_learning_retry1/result.json",
+      "candidate_result": "/mnt/d/Project/IR-AutoResearch/results/lr_candidate_100_learning/result.json",
+      "proposal": {
+        "hypothesis": "历史手工实验：初始学习率减半，保持其余条件。",
+        "kind": "learning_rate",
+        "change": {"initial_lr": 0.0001}
+      }
+    },
+    {
+      "baseline_result": "/mnt/d/Project/IR-AutoResearch/results/lr_baseline_100_learning_retry1/result.json",
+      "candidate_result": "/mnt/d/Project/IR-AutoResearch/results/sa0_agent_trial_002/result.json",
+      "proposal": {
+        "hypothesis": "历史实验：初始学习率3e-4，保持基线模型。",
+        "kind": "learning_rate",
+        "change": {"initial_lr": 0.0003}
+      }
+    }
+  ],
+  "agent": {
+    "codex_path": "/mnt/c/Users/皮/AppData/Local/OpenAI/Codex/bin/f544b3844e0f14e9/codex.exe",
+    "model": "gpt-6.1-sol",
+    "reasoning_effort": "low",
+    "timeout_seconds": 180,
+    "max_prompt_chars": 100000
+  }
+}

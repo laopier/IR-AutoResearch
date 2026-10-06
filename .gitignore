@@ -21,3 +21,7 @@ datasets/
 *.ckpt
 *.zip
 !results/**/source_snapshot.zip
+
+# New local research runs stay on the training machine.
+# Already tracked historical artifacts remain in Git history.
+results/

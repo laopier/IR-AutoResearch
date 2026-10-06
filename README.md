@@ -1,14 +1,17 @@
 # IR-AutoResearch
 
 IR-drop 预测器与自主研究流程的学习、复现和实验管理仓库。
-当前完成的是小规模工程验证，不是正式 B0/SA0 结果；SA1 尚未实现。
+当前实现 B0 固定训练、B1 随机学习率搜索、SA0 离线自主研究和 SA1 联网自主研究。
+已完成部分真实小数据闭环与模拟测试，尚未完成正式科研对照、独立重复与跨设计隐藏评测。
 
 ## 当前进度
 
 - MAVI 数据入口、模型、训练接口及统一 MAE/NRMS/SSIM 评价器。
 - B0 固定配方：3 个训练样本、1 个验证样本，100 步训练、权重保存与重新加载验证。
 - SA0 控制器：冻结起点、提前登记假设、权限/预算检查、独立评估、保留/回退、版本及成本记录。
-- 程序化模型接入：通过已有 Codex CLI 登录提出一个候选，控制器训练验证，再把结果交回模型。
+- 程序化模型接入：通过已有 Codex CLI 登录提出候选，控制器训练验证，再把结果交回模型。
+- B1：固定MAVI，提前生成随机学习率计划，不调用agent。
+- SA1：使用同一训练/判定接口，开放web_search并记录搜索事件、来源及采用理由。
 - 研究轨迹和学习导读。正式跨设计划分、完整训练、多轮自主搜索与硬 token 预算仍需推进。
 
 ## 从哪里开始阅读
@@ -20,10 +23,11 @@ IR-drop 预测器与自主研究流程的学习、复现和实验管理仓库。
 | [train](train) | MAVI 与单步训练接口 |
 | [B0 说明](b0/README.md) | 官方配方核对、Linux 服务器训练 |
 | [B0 交接](B0_HANDOFF_20261001.md) | 已完成的验证和服务器交接步骤 |
-| [SA0 设计依据](sa0/DESIGN_SOURCES.md) | 学长方案与 AuDoPEDA 的对应及当前限制 |
-| [SA0 入口](sa0/agent_loop.py) | Windows CLI 模型调用与本机 WSL 训练闭环 |
+| [SA0 入口](sa0/controller.py) / [完整说明](sa0/SA0_GUIDE.md) | 离线多轮研究、冻结源码、基线复用、预算和恢复 |
+| [B1 入口](b1/controller.py) / [说明](b1/README.md) | 固定模型的随机学习率搜索 |
+| [SA1 入口](sa1/controller.py) / [说明](sa1/README.md) | 联网提案及可回查的检索记录 |
 | [实验规则](program/README.md) | 基础权限、评测与实验原则 |
-| [结果](results) | 固定实验记录、代码 diff、prompt、反馈及资源账本 |
+| 本地 results 目录 | 新运行的结果、prompt、日志和成本；不随代码同步 |
 
 ## 运行与环境
 
@@ -37,14 +41,34 @@ bash b0/launch_server.sh DATA_ROOT NEW_OUTPUT_DIR --preflight-only
 
 模型接入版目前从 Windows 调用 Codex CLI，在本机 WSL 训练；纯 Linux/SSH 执行后端还未实现。
 模型调用需要已有登录。新的实验必须使用新的输出目录，不能覆盖已有记录。
-SA0 演练禁止外部资料检索；远程模型调用所需网络不等于 SA1 的研究检索权限。
+SA0禁用研究检索，SA1开放内置web_search；远程模型调用所需网络不等于研究检索权限。
+
+## 在 Mac 上阅读代码
+
+```bash
+git clone https://github.com/laopier/IR-AutoResearch.git
+cd IR-AutoResearch
+# 已克隆仓库：git pull --ff-only
+```
+
+推荐按 `sa0/controller.py` → `sa0/session.py` → `sa0/proposal.py` →
+`sa0/experiment.py` → `sa0/decision.py` 阅读，再看B1和SA1如何复用这些接口。
+Windows/WSL本机路径仍留在实验配置中；Mac上直接阅读即可，不能原样运行CUDA训练。
+数据、最新results历史、checkpoint、CLI登录信息不上传，干净克隆不会自动包含历史结果。
+运行前须改数据、输出、CLI路径；没有旧基线/历史目录时设baseline_source_session为null，
+SA0/SA1的history_sessions与history_results为空数组。真实训练需要CUDA环境。
+无需真实模型或GPU的流程检查：
+
+```bash
+python -m unittest sa0.test_session sa1.test_sa1 b1.test_b1 -v
+```
 
 ## 版本与产物
 
 仓库保留原有开发历史，`main` 管理当前代码和文档。
 `results/b0_mini_20261001_seed0_steps100` 保存 B0 小规模结果。
 `results/sa0_mini_20261001` 与 `results/sa0_agent_loop_20261001` 保存两次不同的演练记录。
-SA0 导出包含隔离工作区的 Git bundle，可以恢复对应代码历史；不复制训练数据。
+早期SA0导出包含隔离工作区的Git bundle，可以恢复对应代码历史；不复制训练数据。
 大型 `.pt` 权重放在本 private 仓库的 Release 附件，位置与 SHA256 见 [产物索引](ARTIFACTS_20261001.md)。
 
 原始 `.npy` 数据、认证文件、环境目录和 Python 缓存不进入 Git。

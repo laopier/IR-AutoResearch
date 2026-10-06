@@ -93,7 +93,35 @@ bash b0/launch_server.sh /path/to/IR_drop /path/to/results/b0_development_seed0_
 
 每次输出到全新目录，包含 config.json、environment.json、source.json、source_snapshot.zip、数据清单副本与哈希、每步 loss/lr/sample_ids、result.json、checkpoint_final.pt；每 10000 步另存阶段 checkpoint。失败时保留日志和 failure.json。
 
-checkpoint 包含模型权重、步数、配置与来源，支持推理和独立评价；不包含 optimizer、采样进度和 RNG 恢复状态，因此当前不支持无缝断点续训。遇到中断，应保留失败记录，在新目录重跑，不能把分段重启视为连续完整训练。
+2026-10-02 起，新 checkpoint 包含模型权重、AdamW 状态、完成步数、Python/NumPy/PyTorch/CUDA 随机状态和 DataLoader 采样进度，支持 `--resume`。此前下载的 Kaggle 100 步权重不包含这些状态，不能精确续训；仍可用于预测与评价。
+
+恢复时仍输出到全新目录。`--steps` 表示累计目标，例如已完成 10000 步后设置 20000，只再更新 10000 次；`--lr-horizon-steps` 必须保持不变，学习率从保存的全局步数接着计算。
+
+```bash
+python -m b0.run \
+  --data-root /path/to/IR_drop \
+  --train-manifest prepare/manifests/smoke_train.csv \
+  --validation-manifest prepare/manifests/smoke_validation.csv \
+  --output /path/to/results/b0_mini_resumed \
+  --scope mini --steps 20000 --lr-horizon-steps 200000 \
+  --batch-size 2 --num-workers 0 --seed 0 \
+  --resume /path/to/previous_run/checkpoint_final.pt
+```
+
+当前只支持 `num_workers=0`。通过重新构建本轮打乱顺序、读取并跳过已消费 batch 恢复游标，跳过过程不更新模型；恢复前可能需要读取较多样本。全部准备完成后恢复全局 RNG，避免额外验证和模型初始化改变下一步训练。
+
+程序校验训练代码、配方、数据清单及数据文件 SHA256，并检查软件版本、设备类型、GPU 名称和可见设备数；不匹配会拒绝恢复。路径可以随云端会话变化。数据全量哈希可能耗时，但可检测同名文件被替换。即使这些检查相同，也不能保证不同物理设备或驱动下逐位一致；迁移环境需重新验证。
+
+保存采用临时文件和原子替换，完整写入后才出现 `.pt`。突然中断只能从上一个已完成的 checkpoint 恢复，尚未保存的更新需要重跑。每段日志保留自己的全局步数与父 checkpoint 哈希；统计总成本时应加总所有分段（包括失败），不能只使用最后一段的耗时。恢复日志回放时间计入本段 elapsed_seconds；不计入本段 training_seconds。
+
+验证方法：
+
+```bash
+python -m unittest b0.test_resume b0.test_preflight -v
+python -m b0.verify_resume --data-root /path/to/training_set_full_mini/IR_drop --output /path/to/new_resume_verification --device cuda
+```
+
+前者使用带随机行为的小模型检查跨轮次恢复、周期 checkpoint 和错误输入；后者在独立进程中对实际 MAVI 比较连续 4 步与 2 步后恢复到 4 步，检查模型、优化器、RNG、样本顺序、loss、学习率及验证指标。
 
 source.json 如实记录 Git commit 和 dirty 状态，并保存实际源码快照与 SHA256。今日 mini 运行是工程验证，未把工作区强行清理或提交；正式可比较实验应先由项目负责人冻结版本、确认 clean Git，再执行。
 

@@ -19,6 +19,8 @@ from torch.utils.data import DataLoader
 from prepare.dataset import IRDropDataset
 from program.runner import set_seed, validate
 from train.experiment import build_model, build_optimizer, train_batch
+from b0.checkpoint import (FORMAT_VERSION, atomic_save, capture_rng, load_checkpoint,
+                           restore_iterator, restore_rng)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -37,6 +39,11 @@ def official_lr(step: int, horizon: int) -> float:
         raise ValueError('step must be in [0, lr_horizon_steps)')
     return 1e-7 + 0.5 * (2e-4 - 1e-7) * (math.cos(math.pi * step / horizon) + 1)
 
+def candidate_lr(step: int, horizon: int) -> float:
+    # Official train.py sets the LR BEFORE update, with zero-based iter_num.
+    if not 0 <= step < horizon:
+        raise ValueError('step must be in [0, lr_horizon_steps)')
+    return 1e-7 + 0.5 * (1e-4 - 1e-7) * (math.cos(math.pi * step / horizon) + 1)
 
 def check_data(train: IRDropDataset, validation: IRDropDataset,
                batch_size: int, check_values: bool) -> dict:
@@ -110,12 +117,15 @@ def capture_source(output: Path) -> dict:
 
 
 def run(args) -> None:
+    args.resume = getattr(args, 'resume', None)
     if args.steps <= 0 or args.batch_size <= 0 or args.num_workers < 0:
         raise ValueError('Invalid training budget or worker count')
     if args.steps > args.lr_horizon_steps:
         raise ValueError('steps cannot exceed lr_horizon_steps')
     if args.checkpoint_every <= 0 or args.log_every <= 0:
         raise ValueError('Checkpoint and log intervals must be positive')
+    if args.num_workers != 0:
+        raise ValueError('Resumable B0 currently requires num_workers=0')
     train = IRDropDataset(args.data_root, args.train_manifest)
     validation = IRDropDataset(args.data_root, args.validation_manifest)
     print('Preflight: checking all manifest files and array headers', flush=True)
@@ -125,6 +135,15 @@ def run(args) -> None:
         return
     if args.device == 'cuda' and not torch.cuda.is_available():
         raise RuntimeError('CUDA requested but unavailable')
+    resumed = load_checkpoint(args.resume) if args.resume else None
+    start_step = resumed['step'] if resumed else 0
+    if args.steps <= start_step:
+        raise ValueError('--steps is the cumulative target and must exceed the checkpoint step')
+    # Compare contents, not host-specific absolute paths, across cloud sessions.
+    data_report['files_sha256'] = {
+        f'{name}/{relative}': sha256(dataset._resolve_data_path(relative))
+        for name, dataset in [('train', train), ('validation', validation)]
+        for row in dataset.rows for relative in row}
     # Never overwrite a previous run, even when its output directory is empty.
     args.output.mkdir(parents=True, exist_ok=False)
     source = capture_source(args.output)
@@ -163,20 +182,67 @@ def run(args) -> None:
                    'gpu': torch.cuda.get_device_name(device) if device.type == 'cuda' else None,
                    'torch_threads': torch.get_num_threads()}
     write_json(args.output / 'environment.json', environment)
+    contract = {'batch_size': args.batch_size, 'seed': args.seed,
+                'scope': args.scope, 'lr_horizon_steps': args.lr_horizon_steps,
+                'device': args.device, 'cpu_threads': args.cpu_threads,
+                'recipe': config['recipe'],
+                'manifests': {name: data_report[name]['manifest_sha256']
+                              for name in ['train', 'validation']},
+                'data_files': data_report['files_sha256'],
+                'code': {name: digest for name, digest in source['file_sha256'].items()
+                         if name in ['b0/run.py', 'b0/checkpoint.py', 'prepare/dataset.py',
+                                     'prepare/evaluator.py', 'program/runner.py',
+                                     'train/experiment.py', 'train/mavi.py']},
+                'environment': {key: environment[key] for key in
+                                ['python', 'torch', 'numpy', 'opencv', 'cuda_runtime',
+                                 'cudnn', 'gpu', 'torch_threads']},
+                'cuda_device_count': torch.cuda.device_count() if torch.cuda.is_available() else 0}
     started = time.perf_counter()
     try:
+        if resumed:
+            if resumed['resume_contract'] != contract:
+                differences = [key for key in contract if resumed['resume_contract'].get(key) != contract[key]]
+                raise ValueError('Resume contract changed: ' + ', '.join(differences))
+            model.load_state_dict(resumed['state_dict'], strict=True)
+            optimizer.load_state_dict(resumed['optimizer_state_dict'])
+            print(f'Resuming after step {start_step}; target {args.steps}', flush=True)
         initial_metrics = validate(model, val_loader, device)
         print('Initial validation:', initial_metrics, flush=True)
-        iterator = iter(loader)
+        if resumed:
+            sampling = resumed['sampling']
+            epoch_generator_state = sampling['epoch_generator_state']
+            batches_consumed = sampling['batches_consumed']
+            iterator = restore_iterator(loader, generator, sampling)
+            # Model construction, validation and replay may consume randomness.
+            # Restore global RNG AFTER all preparation, before the next update.
+            restore_rng(resumed['rng'])
+        else:
+            epoch_generator_state = generator.get_state().clone()
+            batches_consumed = 0
+            iterator = iter(loader)
+
+        def save_training_state(path, step):
+            atomic_save(path, {'resume_format_version': FORMAT_VERSION,
+                              'state_dict': model.state_dict(),
+                              'optimizer_state_dict': optimizer.state_dict(),
+                              'step': step, 'config': config, 'source': source,
+                              'resume_contract': contract, 'rng': capture_rng(),
+                              'sampling': {'epoch_generator_state': epoch_generator_state,
+                                           'batches_consumed': batches_consumed,
+                                           'generator_state': generator.get_state().clone()}})
+
         losses = []
         training_started = time.perf_counter()
         with (args.output / 'training.jsonl').open('x', encoding='utf-8') as log:
-            for step in range(args.steps):
+            for step in range(start_step, args.steps):
                 try:
                     feature, target, ids = next(iterator)
                 except StopIteration:
+                    epoch_generator_state = generator.get_state().clone()
+                    batches_consumed = 0
                     iterator = iter(loader)
                     feature, target, ids = next(iterator)
+                batches_consumed += 1
                 lr = official_lr(step, args.lr_horizon_steps)
                 for group in optimizer.param_groups:
                     group['lr'] = lr
@@ -188,19 +254,17 @@ def run(args) -> None:
                 if (step + 1) % args.log_every == 0 or step + 1 == args.steps:
                     print(f'Step {step+1}/{args.steps}, loss={loss:.6f}, lr={lr:.9g}', flush=True)
                 if (step + 1) % args.checkpoint_every == 0 and step + 1 < args.steps:
-                    torch.save({'state_dict': model.state_dict(), 'step': step + 1,
-                                'config': config, 'source': source},
-                               args.output / f'checkpoint_step{step+1}.pt')
+                    save_training_state(args.output / f'checkpoint_step{step+1}.pt', step + 1)
         if device.type == 'cuda':
             torch.cuda.synchronize(device)
         training_seconds = time.perf_counter() - training_started
-        final_metrics = validate(model, val_loader, device)
         checkpoint_path = args.output / 'checkpoint_final.pt'
-        torch.save({'state_dict': model.state_dict(), 'step': args.steps,
-                    'config': config, 'source': source}, checkpoint_path)
+        # Save before extra evaluation/model initialization consumes global RNG.
+        save_training_state(checkpoint_path, args.steps)
+        final_metrics = validate(model, val_loader, device)
         # Reload into a NEW model and compare all validation metrics.
         reloaded = build_model().to(device)
-        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+        checkpoint = load_checkpoint(checkpoint_path)
         reloaded.load_state_dict(checkpoint['state_dict'], strict=True)
         reload_metrics = validate(reloaded, val_loader, device)
         if not all(math.isclose(final_metrics[k], reload_metrics[k], abs_tol=1e-7, rel_tol=1e-7)
@@ -211,6 +275,9 @@ def run(args) -> None:
         result = {'status': 'completed', 'group': 'B0', 'scope': args.scope,
                   'performance_claims_allowed': False, 'seed': args.seed,
                   'steps': args.steps, 'batch_size': args.batch_size,
+                  'start_step': start_step, 'updates_this_run': args.steps - start_step,
+                  'resume': {'path': str(args.resume) if args.resume else None,
+                             'sha256': sha256(args.resume) if args.resume else None},
                   'lr_horizon_steps': args.lr_horizon_steps,
                   'source': source, 'data': data_report, 'environment': environment,
                   'initial_validation': initial_metrics, 'validation': final_metrics,
@@ -223,7 +290,8 @@ def run(args) -> None:
                                 'single_gpu_training_hours': training_seconds / 3600 if device.type == 'cuda' else None,
                                 'peak_allocated_mib': torch.cuda.max_memory_allocated(device) / 1024**2 if device.type == 'cuda' else None},
                   'checkpoint': {'path': checkpoint_path.name, 'sha256': sha256(checkpoint_path),
-                                 'weights_only_no_optimizer_resume': True}}
+                                 'weights_only_no_optimizer_resume': False,
+                                 'resume_format_version': FORMAT_VERSION}}
         write_json(args.output / 'result.json', result)
         print('COMPLETED:', final_metrics, 'checkpoint reload verified', flush=True)
     except Exception:
@@ -240,6 +308,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--scope', choices=['mini', 'development_baseline'], required=True)
     parser.add_argument('--steps', type=int, default=200000)
+    parser.add_argument('--resume', type=Path, help='New-format checkpoint; --steps is cumulative target')
     parser.add_argument('--lr-horizon-steps', type=int, default=200000)
     parser.add_argument('--batch-size', type=int, default=2)
     parser.add_argument('--seed', type=int, default=0)
