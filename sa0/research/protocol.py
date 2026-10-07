@@ -7,6 +7,9 @@ STAGES = ("smoke", "low", "full", "confirmation")
 
 def validate(config):
     p = copy.deepcopy(config)
+    p.setdefault("full_selection_enabled", False)
+    if type(p["full_selection_enabled"]) is not bool:
+        raise ValueError("full_selection_enabled须为布尔值")
     if p.get("version") != 2 or p.get("condition") not in {"SA0", "SA1"}:
         raise ValueError("需要version=2及SA0/SA1条件")
     if p.get("mode") != "workflow_validation":
@@ -16,6 +19,16 @@ def validate(config):
             raise ValueError(f"{name}必须为正整数")
     if p["max_exploration_tasks"] >= p["max_gpu_tasks"]:
         raise ValueError("必须保留确认任务额度")
+    if p["full_selection_enabled"]:
+        for key in ("max_screening_tasks", "full_task_reserve", "max_full_candidates"):
+            if type(p.get(key)) is not int or p[key] <= 0:
+                raise ValueError(f"{key}须为正整数")
+        if p["max_full_candidates"] > 2 or p["full_task_reserve"] < p["max_full_candidates"]:
+            raise ValueError("full最多选择2个候选，预留任务须覆盖选择数量")
+        if 1 + p["max_screening_tasks"] + p["full_task_reserve"] > p["max_exploration_tasks"]:
+            raise ValueError("探索额度必须容纳初始化B0、screening及full储备")
+        if p["max_gpu_tasks"] - p["max_exploration_tasks"] < 4:
+            raise ValueError("确认至少预留4次新训练（seed0匹配结果复用）")
     if p.get("confirmation_seeds") != [0, 1, 2] or p.get("low_seeds") != [0, 1]:
         raise ValueError("当前协议使用low seed0/1及确认seed0/1/2")
     for stage in STAGES:

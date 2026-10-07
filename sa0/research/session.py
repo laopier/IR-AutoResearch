@@ -64,8 +64,9 @@ def _execute_job(c, config, folder, workspace):
 
 
 class Workflow:
-    def __init__(self, c, config):
+    def __init__(self, c, config, retry_failed_full=False):
         self.c, self.p = c, protocol.validate(config)
+        self.retry_failed_full = retry_failed_full
         self.root = Path(self.p["session_dir"]).resolve()
         self.state_path = self.root / "state.json"
 
@@ -78,6 +79,10 @@ class Workflow:
             log.flush()
 
     def initialize(self):
+        audit_path = self.p.get("dataset_report")
+        if audit_path:
+            from prepare.pilot_ready import verify
+            verify(self.p["data_root"], audit_path, self.p["stages"].values())
         self.root.mkdir(parents=True, exist_ok=True)
         if self.state_path.exists():
             if self.c.read_json(self.root / "protocol.json") != self.p:
@@ -118,7 +123,7 @@ class Workflow:
         for stage in self.p["stages"].values():
             hashes.update(self.c.dataset_hashes({**self.p, **stage}))
         self.c.write_json(self.root / "data_hashes.json", hashes)
-        files = ["sa0/controller.py", "sa0/research/PROMPT.md", "sa1/proposal.py", "sa1/agent.py", "sa0/session.py"]
+        files = ["sa0/controller.py", "sa0/research/PROMPT.md", "sa1/proposal.py", "sa1/agent.py", "sa0/session.py", "prepare/pilot_ready.py"]
         files += [path.relative_to(self.c.ROOT).as_posix() for path in (self.c.ROOT / "sa0/research").glob("*.py")]
         self.c.write_json(self.root / "harness_hashes.json", {name: self.c.sha256(self.c.ROOT / name) for name in files})
         self.c.write_json(self.root / "source_hashes.json", self.c.source_hashes(base))
@@ -155,8 +160,14 @@ class Workflow:
         self.save()
         # Hidden results/labels never enter state or this feedback envelope.
         context = {"mode": self.p["mode"], "condition": self.p["condition"],
+                   "stage_specs": self.p["stages"], "task_limits": {"total": self.p["max_gpu_tasks"],
+                       "exploration": self.p["max_exploration_tasks"], "screening": self.p.get("max_screening_tasks"),
+                       "full_reserve": self.p.get("full_task_reserve"), "max_full_candidates": self.p.get("max_full_candidates")},
                    "remaining_exploration_tasks": self.p["max_exploration_tasks"] - self.count("exploration"),
                    "remaining_gpu_tasks": self.p["max_gpu_tasks"] - len(self.s["tasks"]),
+                   "phase": self.s["phase"], "eligible_full_candidates": self.eligible_full(),
+                   "remaining_screening_tasks": self.screening_remaining(),
+                   "full_task_reserve": self.p.get("full_task_reserve"),
                    "hypotheses": self.s["hypotheses"], "candidates": self.s["candidates"],
                    "last_action_error": self.s.get("last_action_error"),
                    "experiments": self.s["tasks"], "interpretations": self.s["interpretations"],
@@ -186,6 +197,23 @@ class Workflow:
     def count(self, phase):
         return sum(t["phase"] == phase for t in self.s["tasks"])
 
+    def bucket_count(self, bucket):
+        return sum(t.get("budget_bucket") == bucket for t in self.s["tasks"])
+
+    def screening_remaining(self):
+        if not self.p["full_selection_enabled"]:
+            return max(0, self.p["max_exploration_tasks"] - self.count("exploration"))
+        return max(0, min(self.p["max_screening_tasks"] - self.bucket_count("screening"),
+                          self.p["max_exploration_tasks"] - self.count("exploration") - self.p["full_task_reserve"]))
+
+    def eligible_full(self):
+        return [key for key in self.s["candidates"] if key != "B0" and self.can_promote(key)]
+
+    def enter_full_selection(self, reason):
+        self.s.update(phase="full_selection", screening_end_reason=reason)
+        self.event("screening_closed", reason=reason, eligible=self.eligible_full())
+        self.save()
+
     def signature(self, key, stage, seed):
         node = self.s["candidates"][key]
         spec = {**self.p["stages"][stage], "seed": seed, "batch_size": self.p["batch_size"],
@@ -196,7 +224,16 @@ class Workflow:
     def job(self, key, stage, seed):
         if stage not in protocol.STAGES or key not in self.s["candidates"]:
             raise ValueError("未知阶段或候选")
+        if self.p["full_selection_enabled"]:
+            if key != "B0" and stage == "full" and self.s["phase"] == "exploration":
+                raise ValueError("screening不得直接提交候选full")
+            if self.s["phase"] == "full_selection" and (
+                stage != "full" or (key != "B0" and key not in self.s.get("full_selection_plan", {}).get("candidate_ids", []))
+            ):
+                raise ValueError("full-selection仅提交锁定名单的full及匹配基线")
         phase = "finalization" if self.s["phase"] == "finalization" else "exploration"
+        bucket = ("confirmation" if phase == "finalization" else "full_selection" if self.s["phase"] == "full_selection"
+                  else "baseline_init" if self.s["phase"] == "planning" and key == "B0" and stage == "full" else "screening")
         sig = self.signature(key, stage, seed)
         for old in self.s["tasks"]:
             if old["signature"] == sig and old["status"] == "completed":
@@ -207,11 +244,15 @@ class Workflow:
                 return old
         if len(self.s["tasks"]) >= self.p["max_gpu_tasks"] or (phase == "exploration" and self.count(phase) >= self.p["max_exploration_tasks"]):
             raise ValueError("任务尝试额度不足")
+        if self.p["full_selection_enabled"] and bucket == "screening" and self.screening_remaining() <= 0:
+            raise ValueError("screening已结束，保留full额度，禁止新low/smoke")
+        if self.p["full_selection_enabled"] and bucket == "full_selection" and self.bucket_count(bucket) >= self.p["full_task_reserve"]:
+            raise ValueError("full任务储备已用尽")
         node = self.s["candidates"][key]
         folder = self.root / "tasks" / f"T{len(self.s['tasks']) + 1:03d}"
         folder.mkdir(parents=True)
         row = {"task_id": folder.name, "candidate_id": key, "stage": stage, "seed": seed,
-               "phase": phase, "signature": sig, "status": "running", "folder": str(folder),
+               "phase": phase, "budget_bucket": bucket, "signature": sig, "status": "running", "folder": str(folder),
                "recipe": node["recipe"], "started_at": time.time()}
         self.s["tasks"].append(row)
         self.save()  # reservation before process launch: failures always consume one attempt
@@ -313,7 +354,7 @@ class Workflow:
         self.save()
 
     def can_promote(self, key):
-        wins = [t for t in self.s["tasks"] if t["candidate_id"] == key and t["stage"] == "low" and t.get("metrics_ok")]
+        wins = [t for t in self.s["tasks"] if t["candidate_id"] == key and t["stage"] == "low" and t.get("metrics_ok") and t.get("scientific_valid") and t["status"] == "completed"]
         if len({t["seed"] for t in wins}) >= 2:
             return True
         return bool(wins) and any(t.get("scientific_valid") and "mechanistic_progress" in self.s["interpretations"].get(t["task_id"], {}).get("labels", [])
@@ -321,6 +362,11 @@ class Workflow:
                                   for t in self.s["tasks"] if self.s["candidates"][t["candidate_id"]].get("mechanism_test"))
 
     def experiment(self, key, stage, seed):
+        if self.p["full_selection_enabled"]:
+            if stage == "full" and self.s["phase"] != "full_selection":
+                raise ValueError("full须先进入full-selection，不与普通low探索混跑")
+            if stage != "full" and self.s["phase"] == "full_selection":
+                raise ValueError("full-selection阶段禁止新low/smoke")
         if key == "B0" or stage not in {"smoke", "low", "full"}:
             raise ValueError("探索实验须为候选smoke/low/full")
         allowed = self.p["low_seeds"] if stage != "full" else [0]
@@ -328,7 +374,7 @@ class Workflow:
             raise ValueError("阶段seed未预先授权")
         if key not in self.s["candidates"]:
             raise ValueError("候选不存在")
-        if any(self.s["hypotheses"][h]["status"] != "open" for h in self.s["candidates"][key]["hypothesis_ids"]):
+        if (stage != "full" or not self.p["full_selection_enabled"]) and any(self.s["hypotheses"][h]["status"] != "open" for h in self.s["candidates"][key]["hypothesis_ids"]):
             raise ValueError("方向须先重新评估")
         if stage == "full" and not self.can_promote(key):
             raise ValueError("尚未满足两seed改善或改善加匹配关键消融的晋级证据")
@@ -338,6 +384,8 @@ class Workflow:
             needed = sum(not any(t["signature"] == self.signature(k, stage, seed) and t["status"] == "completed" for t in self.s["tasks"]) for k in ("B0", key))
             if needed > min(self.p["max_exploration_tasks"] - self.count("exploration"), self.p["max_gpu_tasks"] - len(self.s["tasks"])):
                 raise ValueError("匹配对照与候选的剩余额度不足")
+            if self.p["full_selection_enabled"] and stage == "low" and needed > self.screening_remaining():
+                raise ValueError("screening余量不足以完成匹配基线和候选，须进入full-selection")
             baseline = self.job("B0", stage, seed)
             if baseline["status"] != "completed":
                 raise RuntimeError("匹配基线失败，停止本次候选提交")
@@ -360,6 +408,8 @@ class Workflow:
         if not isinstance(answer, dict):
             raise ValueError("动作必须为对象")
         action = answer.get("action")
+        if self.p["full_selection_enabled"] and self.s["phase"] == "full_selection":
+            raise ValueError("筛选已锁定，不能继续创建/修改候选或low实验")
         if action == "candidate" and set(answer) == {"action", "candidate"}:
             key = answer["candidate"].get("candidate_id")
             destination = self.root / "candidates" / str(key)
@@ -377,7 +427,19 @@ class Workflow:
             self.c.write_json(destination / "candidate.json", node)
             # Metadata is outside hashed source files (*.py).
         elif action == "experiment" and set(answer) == {"action", "candidate_id", "stage", "seed"}:
-            self.experiment(answer["candidate_id"], answer["stage"], answer["seed"])
+            if self.p["full_selection_enabled"] and answer["stage"] == "full":
+                if answer["seed"] != 0 or not self.can_promote(answer["candidate_id"]):
+                    raise ValueError("提前晋级请求缺少证据或seed错误")
+                self.enter_full_selection("agent requested early full selection")
+            else:
+                if self.p["full_selection_enabled"]:
+                    keys = ("B0", answer["candidate_id"]) if answer["stage"] == "low" else (answer["candidate_id"],)
+                    required = sum(not any(t["signature"] == self.signature(k, answer["stage"], answer["seed"]) and t["status"] == "completed"
+                                           for t in self.s["tasks"]) for k in keys)
+                    if required > self.screening_remaining():
+                        self.enter_full_selection("next screen cannot fit matched baseline and candidate")
+                        return
+                self.experiment(answer["candidate_id"], answer["stage"], answer["seed"])
         elif action == "reconsider" and set(answer) == {"action", "hypothesis_id", "decision", "reason", "evidence_task_ids"}:
             h = self.s["hypotheses"].get(answer["hypothesis_id"])
             if not h or answer["decision"] not in {"continue", "close"} or not answer["reason"].strip():
@@ -419,11 +481,55 @@ class Workflow:
                 raise ValueError("未开展有效科学实验的假设必须说明暂不研究理由")
             self.s.update(phase="finalization", selection_reason=answer["reason"],
                           untested_hypotheses=answer["untested_hypotheses"])
+            if self.p["full_selection_enabled"]:
+                self.enter_full_selection("agent requested end of screening")
         else:
             raise ValueError("动作schema未授权")
         self.save()
 
+    def full_selection(self):
+        eligible = self.eligible_full()
+        if not eligible:
+            self.s.update(phase="finalization", full_selection_outcome="no_eligible_candidates")
+            self.save()
+            return
+        if not self.s.get("full_selection_plan"):
+            path = self.root / "full_selection_plan.json"
+            answer = self.c.read_json(path) if path.exists() else self.ask("full_selection", f"screening已关闭，禁止创建候选或提交low。请从{eligible}选择1～{self.p['max_full_candidates']}个候选。只返回{{candidate_ids:[编号],reason:选择理由}}。无须用满名额。")
+            if not isinstance(answer, dict) or set(answer) != {"candidate_ids", "reason"}:
+                raise ValueError("full选择字段无效")
+            ids = answer["candidate_ids"]
+            if not isinstance(ids, list) or not 1 <= len(ids) <= self.p["max_full_candidates"] or len(set(ids)) != len(ids) or any(key not in eligible for key in ids) or not isinstance(answer["reason"], str) or not answer["reason"].strip():
+                raise ValueError("full必须选择1～2个不同且可晋级的候选")
+            self.s["full_selection_plan"] = answer
+            if not path.exists():
+                self.c.write_json(path, answer)
+            self.save()
+        completed = []
+        for key in self.s["full_selection_plan"]["candidate_ids"]:
+            # Archived failures are not retried implicitly. Resume requires explicit retry permission.
+            prior = [t for t in self.s["tasks"] if t["candidate_id"] == key and t["stage"] == "full"]
+            if prior and not any(t.get("scientific_valid") and t["status"] == "completed" for t in prior):
+                if not self.retry_failed_full:
+                    continue
+            row = self.experiment(key, "full", 0)
+            self.s.setdefault("full_retry_authorized", {}).pop(key, None)
+            if row["status"] == "completed" and row.get("scientific_valid"):
+                completed.append(key)
+            self.save()
+        if not completed:
+            self.s["full_selection_outcome"] = "engineering_failure_no_valid_full"
+            self.save()
+            raise RuntimeError("可晋级候选full均未有效完成，暂停，不冒充完成；下次需明确授权重试")
+        self.s.update(phase="finalization", full_selection_outcome="completed", completed_full_candidates=completed)
+        self.save()
+
     def finalize(self):
+        if self.p["full_selection_enabled"] and self.eligible_full() and not any(
+            t["candidate_id"] != "B0" and t["stage"] == "full" and t.get("scientific_valid") and t["status"] == "completed"
+            for t in self.s["tasks"]
+        ):
+            raise ValueError("存在可晋级候选但没有有效full，禁止直接finalize")
         self.s["phase"] = "finalization"
         if "untested_hypotheses" not in self.s:
             exercised = {h for t in self.s["tasks"] if t.get("scientific_valid") and t["candidate_id"] != "B0"
@@ -500,6 +606,8 @@ class Workflow:
         summary = {"version": 2, "condition": self.p["condition"], "mode": self.p["mode"], "phase": self.s["phase"],
                    "stop_reason": self.s.get("stop_reason"), "gpu_task_attempts": len(self.s["tasks"]),
                    "exploration_attempts": self.count("exploration"), "finalization_attempts": self.count("finalization"),
+                   "screening_attempts": self.bucket_count("screening"), "full_selection_attempts": self.bucket_count("full_selection"),
+                   "full_selection_plan": self.s.get("full_selection_plan"), "full_selection_outcome": self.s.get("full_selection_outcome"),
                    "agent_calls": len(calls), "agent_active_seconds": sum(c.get("seconds", 0) for c in calls),
                    "unknown_agent_time_calls": sum("seconds" not in c for c in calls),
                    "uncertain_worker_tasks": sum(bool(t.get("accounting_uncertain")) for t in self.s["tasks"]),
@@ -545,11 +653,14 @@ class Workflow:
                     if row.get("baseline_task_id"):
                         self.interpret(row)
                 while self.s["phase"] == "exploration":
+                    if self.p["full_selection_enabled"] and self.screening_remaining() <= 0:
+                        self.enter_full_selection("screening_attempt_limit; full slots preserved")
+                        break
                     if self.count("exploration") >= self.p["max_exploration_tasks"]:
                         self.s.update(phase="finalization", stop_reason="exploration_attempt_limit")
                         break
                     if all(h["status"] == "closed" for h in self.s["hypotheses"].values()):
-                        self.s.update(phase="finalization", stop_reason="all_hypotheses_closed")
+                        self.s.update(phase="full_selection" if self.p["full_selection_enabled"] else "finalization", stop_reason="all_hypotheses_closed")
                         break
                     answer = self.ask("next_action", ACTION_SCHEMA)
                     same = digest(answer) == self.s.get("last_action_signature")
@@ -572,6 +683,8 @@ class Workflow:
                     failed = [t for t in self.s["tasks"][-3:] if t["status"] not in {"completed", "running"}]
                     if len(failed) == 3 and len({t.get("reason") for t in failed}) == 1:
                         raise RuntimeError("连续相同工程错误，暂停处理资源或实现问题")
+                if self.p["full_selection_enabled"] and self.s["phase"] == "full_selection":
+                    self.full_selection()
                 self.finalize()
             except BaseException as error:
                 self.s.update(resume_phase=self.s["phase"], phase="paused", stop_reason=f"{type(error).__name__}: {error}")

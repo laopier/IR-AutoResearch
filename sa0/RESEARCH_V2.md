@@ -1,5 +1,8 @@
 # 假设驱动研究流程 v2
 
+当前默认128/32预跑配置及screening→full-selection调度以[PILOT_RUN_20261007.md](../PILOT_RUN_20261007.md)
+为准：low100/full500、总24次、筛选13次、full储备4次。下文保留最初v2设计说明。
+
 当前目标是本地workflow_validation，不是正式研究结果。B0、B1及旧实验文件保持不变。
 SA0和SA1共享相同调度、候选权限、训练与评价，区别仅在检索权限和检索轨迹。
 

@@ -2,6 +2,7 @@
 
 默认入口已升级到共享假设驱动v2，读取sa1/research_config.json，详见
 [共同协议](../sa0/RESEARCH_V2.md)。下文是旧版配置/结果说明，使用`--legacy`访问旧入口。
+当前128/32预跑、low100/full500和强制full-selection见[预跑配置](../PILOT_RUN_20261007.md)。
 
 入口：
 

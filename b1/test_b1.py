@@ -42,11 +42,11 @@ class SearchTests(unittest.TestCase):
                 validate_config({**self.config, **extra})
 
     def test_fixed_training_and_budget_match_sa0(self):
-        sa0 = json.loads((controller.ROOT / "sa0/config.json").read_text(encoding="utf-8"))
-        for key in (*controller.FIXED_RESULT_KEYS, "baseline_initial_lr", "data_root", "train_manifest",
-                    "val_manifest", "max_trials", "max_session_process_seconds", "process_timeout_seconds",
-                    "max_training_seconds", "max_peak_allocated_mib", "budget_status"):
-            self.assertEqual(self.config[key], sa0[key], key)
+        sa0 = json.loads((controller.ROOT / "sa0/research_config.json").read_text(encoding="utf-8"))
+        reference = {**sa0, **sa0["stages"]["full"], "seed": 0}
+        for key in (*controller.FIXED_RESULT_KEYS, "baseline_initial_lr", "data_root", "train_manifest", "val_manifest"):
+            self.assertEqual(self.config[key], reference[key], key)
+        self.assertIsNone(self.config["max_session_process_seconds"])
 
 
 class IntegrationTests(unittest.TestCase):
@@ -55,6 +55,8 @@ class IntegrationTests(unittest.TestCase):
         self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
         self.root = self.fixture.root
+        (self.root / "prepare/pilot_ready.py").write_text(
+            (controller.ROOT / "prepare/pilot_ready.py").read_text(encoding="utf-8"), encoding="utf-8")
         (self.root / "b1").mkdir()
         for filename in ("controller.py", "search.py"):
             (self.root / "b1" / filename).write_text(
@@ -130,6 +132,11 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(summary["baseline"], old["result"])
         self.assertTrue(summary["baseline_reused"])
         self.assertEqual(summary["agent_calls"], 0)
+
+    def test_no_cumulative_time_cap_still_limits_trial_count(self):
+        summary = self.run_case(config={**self.config, "max_session_process_seconds": None})
+        self.assertEqual(len(self.fixture.train_calls), 3)
+        self.assertEqual(summary["stop_reason"], "max_trials_reached")
 
 
 if __name__ == "__main__":

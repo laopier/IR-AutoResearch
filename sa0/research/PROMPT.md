@@ -15,12 +15,16 @@ expected_metrics、falsification_condition、risks、estimated_cost，均为非�
 候选源码old必须唯一匹配父源码；模型接口、依赖和评价约定保持兼容。
 
 取消micro。smoke仅作工程检查；low检验假设/复验/消融；full是本地模拟完整训练，confirmation由控制器执行。
-本地默认smoke2步、low20步、full100步、confirmation100步。阶段不强制逐级经过。
+步数与数据清单以反馈stage_specs为准。128/32预跑为smoke2步、low100步、full/confirmation500步。
 low只用seed0/1，与匹配seed和阶段B0比较。不同候选/seed/fidelity结果不能混成复验。
 full晋级需同一候选两个不同seed的low三指标改善，或一次low改善加一项提前登记的匹配关键消融。
 mechanism_test在训练前指定父对照、指标、预期increase/decrease及min_delta，结果只能称初步支持，不能证明唯一因果。
 指标进展规则：MAE严格降低、NRMS不升、SSIM不降。训练loss不能替代验证。
-资源以任务尝试计：总20次，探索最多10次；匹配B0、GPU smoke、失败与中断均计数，复用完成结果不计。
+资源以反馈task_limits为准；匹配B0、GPU smoke、失败与中断均计数，复用完成结果不计。
+screening自主探索；达到筛选额度或主动结束时，控制器转入独立full-selection。
+full-selection只从可晋级候选选择1～2个，不再创建候选或提交low。至少完成一个有效full才可结束；
+若没有可晋级候选，则报告未获得晋级证据，保留B0。full工程失败不能冒充完成，也不隐式重试。
+Agent可提前请求full-selection，但进入后不返回普通low探索；预留名额不保证墙钟截止时间。
 agent调用量/token只记录，不设额度；不要为了占用额度无限生成无用候选或重复已完成实验。
 探索结束选择完整阶段达标候选中MAE最低者，再以NRMS更低、SSIM更高打破平局，无合格候选保留B0。
 finalist设计锁定，配对seed0/1/2按均值检查三指标，报告标准差、各seed胜负与差值。确认失败回到B0。

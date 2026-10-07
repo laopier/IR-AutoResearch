@@ -15,6 +15,9 @@ from b1.search import validate_config, generate_plan
 
 def run_session(c, value):
     protocol = validate_config(value)
+    if protocol.get("dataset_report"):
+        from prepare.pilot_ready import verify
+        verify(protocol["data_root"], protocol["dataset_report"], [protocol])
     session = Path(protocol["session_dir"]).resolve()
     session.mkdir(parents=True, exist_ok=True)
     frozen = session / "frozen"
@@ -31,7 +34,7 @@ def run_session(c, value):
             c.write_json(session / "source_hashes.json", c.source_hashes(frozen))
             c.write_json(session / "data_hashes.json", c.dataset_hashes(protocol))
             names = ("b1/controller.py", "b1/search.py", "sa0/controller.py", "sa0/session.py",
-                     "sa0/baseline_cache.py", "sa0/decision.py")
+                     "sa0/baseline_cache.py", "sa0/decision.py", "prepare/pilot_ready.py")
             c.write_json(session / "harness_hashes.json", {name: c.sha256(c.ROOT / name) for name in names})
             # Plan is fixed before the baseline and all candidate results.
             c.write_json(session / "search_plan.json", generate_plan(protocol))
@@ -48,7 +51,7 @@ def run_session(c, value):
             baseline_folder.mkdir()
             print("B1开始训练固定基线：", baseline_folder / "train.log", flush=True)
             limited = {**protocol, "process_timeout_seconds": min(
-                protocol["process_timeout_seconds"], protocol["max_session_process_seconds"])}
+                protocol["process_timeout_seconds"], protocol["max_session_process_seconds"] or float("inf"))}
             try:
                 baseline_record = c.execute_training(limited, frozen, baseline_folder, frozen,
                                                      protocol["baseline_initial_lr"])
@@ -90,7 +93,8 @@ def run_session(c, value):
                     })
                 record = c.read_json(folder / "record.json")
             else:
-                remaining = protocol["max_session_process_seconds"] - state["process_seconds"]
+                remaining = (protocol["max_session_process_seconds"] - state["process_seconds"]
+                             if protocol["max_session_process_seconds"] is not None else float("inf"))
                 if remaining <= 0:
                     state["stop_reason"] = "session_process_budget_exhausted"
                     break

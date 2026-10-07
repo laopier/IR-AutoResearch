@@ -1,25 +1,30 @@
 {
   "condition": "B1",
-  "session_dir": "/mnt/d/Project/IR-AutoResearch/results/b1_random_001",
-  "baseline_source_session": "/mnt/d/Project/IR-AutoResearch/results/sa0_autonomous_001",
-  "data_root": "/mnt/d/WSL/Project/CircuitNet-main/training_set_full_mini/IR_drop",
-  "train_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_train.csv",
-  "val_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_validation.csv",
+  "session_dir": "/mnt/d/Project/IR-AutoResearch/results/b1_pilot128_random_001",
+  "baseline_source_session": null,
+  "data_root": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/data",
+  "train_manifest": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/train.csv",
+  "val_manifest": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/validation.csv",
   "seed": 0,
   "search_seed": 0,
-  "steps": 100,
+  "steps": 500,
   "batch_size": 2,
   "val_batch_size": 1,
   "lr_horizon_steps": 200000,
   "baseline_initial_lr": 0.0002,
   "max_trials": 2,
   "search_space": {
-    "initial_lr": {"distribution": "log_uniform", "min": 1e-7, "max": 0.001}
+    "initial_lr": {
+      "distribution": "log_uniform",
+      "min": 1E-07,
+      "max": 0.001
+    }
   },
-  "process_timeout_seconds": 1800,
-  "max_session_process_seconds": 5400,
+  "process_timeout_seconds": 14400,
+  "max_session_process_seconds": null,
   "stop_after_failures": 2,
   "budget_status": "test_limits",
   "max_training_seconds": 1300,
-  "max_peak_allocated_mib": 6500
+  "max_peak_allocated_mib": 6500,
+  "dataset_report": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/DATASET.json"
 }

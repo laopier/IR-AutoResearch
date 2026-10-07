@@ -50,7 +50,8 @@ def trial_metadata(folder):
 def main():
     if "--legacy" not in sys.argv:
         from sa0.research.session import Workflow
-        Workflow(sys.modules[__name__], read_json(ROOT / "sa1/research_config.json")).run()
+        Workflow(sys.modules[__name__], read_json(ROOT / "sa1/research_config.json"),
+                 retry_failed_full="--retry-full-once" in sys.argv).run()
         return
     protocol = read_json(ROOT / "sa1/config.json")
     if protocol.get("condition") != "SA1" or protocol["agent"].get("web_search") != "live":

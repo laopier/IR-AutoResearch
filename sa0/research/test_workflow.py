@@ -34,7 +34,7 @@ class WorkflowTests(unittest.TestCase):
         original = c.ROOT
         for package in ("train", "prepare", "program", "sa0", "sa1"):
             (self.root / package).mkdir()
-        for file in ("sa0/controller.py", "sa0/experiment.py", "sa0/session.py", "sa1/agent.py", "sa1/proposal.py", "train/experiment.py"):
+        for file in ("sa0/controller.py", "sa0/experiment.py", "sa0/session.py", "sa1/agent.py", "sa1/proposal.py", "train/experiment.py", "prepare/pilot_ready.py"):
             shutil.copy2(original / file, self.root / file)
         shutil.copytree(original / "sa0/research", self.root / "sa0/research", ignore=shutil.ignore_patterns("__pycache__"))
         (self.root / "train/mavi.py").write_text("class MAVI:\n    activation='relu'\n")
@@ -46,6 +46,9 @@ class WorkflowTests(unittest.TestCase):
         (self.root / "train.csv").write_text("x.npy,y.npy\n")
         (self.root / "val.csv").write_text("x.npy,y.npy\n")
         self.p = c.read_json(original / "sa0/research_config.json")
+        self.p["full_selection_enabled"] = False  # retain v2 compatibility coverage
+        self.p["dataset_report"] = None
+        self.p.update(max_gpu_tasks=20, max_exploration_tasks=10)
         self.p.update(session_dir=str(self.root / "session"), data_root=str(self.root / "data"), device="cpu")
         for spec in self.p["stages"].values():
             spec.update(train_manifest=str(self.root / "train.csv"), val_manifest=str(self.root / "val.csv"))

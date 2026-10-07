@@ -4,10 +4,12 @@
 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 python -m b1.controller
 ```
 
-配置为b1/config.json，新会话默认results/b1_random_001。
+配置为b1/config.json，新会话默认results/b1_pilot128_random_001。
 固定MAVI、优化器、loss、数据、评价口径和训练seed；只改变初始学习率。
-默认100步、训练batch=2、验证batch=1、余弦周期200000步，最多两轮候选。
-复用sa0_autonomous_001基线时核验与SA0相同的条件，候选均从头初始化。
+当前为128训练/32验证、500步、训练batch=2、验证batch=1、余弦周期200000步，最多两轮候选。
+数据审计未通过拒绝启动；新数据重新建立匹配基线，候选均从头初始化。
+max_session_process_seconds=null关闭累计时间上限，14400秒单任务保护仍保留。
+具体配置及B1尚未接入三seed确认的边界见[预跑说明](../PILOT_RUN_20261007.md)。
 不调用agent、不联网、不改模型源码，不读取历史结果来选择候选。
 
 search_seed控制候选抽样；seed控制模型初始化和训练样本顺序，二者职责不同。

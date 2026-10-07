@@ -5,29 +5,29 @@
     1
   ],
   "batch_size": 2,
-  "worker_timeout_seconds": 3600,
-  "max_exploration_tasks": 10,
-  "session_dir": "/mnt/d/Project/IR-AutoResearch/results/sa1_research_v2_001",
+  "worker_timeout_seconds": 14400,
+  "max_exploration_tasks": 18,
+  "session_dir": "/mnt/d/Project/IR-AutoResearch/results/sa1_pilot128_100_500_001",
   "stages": {
     "low": {
-      "steps": 20,
-      "val_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_validation.csv",
-      "train_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_train.csv"
+      "steps": 100,
+      "val_manifest": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/validation.csv",
+      "train_manifest": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/train.csv"
     },
     "smoke": {
       "steps": 2,
-      "val_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_validation.csv",
-      "train_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_train.csv"
+      "val_manifest": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/validation.csv",
+      "train_manifest": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/train.csv"
     },
     "full": {
-      "steps": 100,
-      "val_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_validation.csv",
-      "train_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_train.csv"
+      "steps": 500,
+      "val_manifest": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/validation.csv",
+      "train_manifest": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/train.csv"
     },
     "confirmation": {
-      "steps": 100,
-      "val_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_validation.csv",
-      "train_manifest": "/mnt/d/Project/IR-AutoResearch/prepare/manifests/smoke_train.csv"
+      "steps": 500,
+      "val_manifest": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/validation.csv",
+      "train_manifest": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/train.csv"
     }
   },
   "agent": {
@@ -40,16 +40,21 @@
   },
   "mode": "workflow_validation",
   "device": "cuda",
-  "data_root": "/mnt/d/WSL/Project/CircuitNet-main/training_set_full_mini/IR_drop",
+  "data_root": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/data",
   "baseline_initial_lr": 0.0002,
   "initial_lr_upper_bound": 0.001,
   "version": 2,
-  "max_gpu_tasks": 20,
+  "max_gpu_tasks": 24,
   "val_batch_size": 1,
   "confirmation_seeds": [
     0,
     1,
     2
   ],
-  "lr_horizon_steps": 200000
+  "lr_horizon_steps": 200000,
+  "full_selection_enabled": true,
+  "max_screening_tasks": 13,
+  "full_task_reserve": 4,
+  "max_full_candidates": 2,
+  "dataset_report": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/DATASET.json"
 }

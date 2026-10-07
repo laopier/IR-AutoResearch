@@ -26,6 +26,8 @@ if resume_path is not None:
     state_of_optimizer = loaded_checkpoint["optimizer"]
     optimizer.load_state_dict(state_of_optimizer)
     start_step = loaded_checkpoint["step"]
+    
+    
 else:
     start_step = 0
 checkpoint_every =100

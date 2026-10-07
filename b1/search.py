@@ -28,8 +28,14 @@ def validate_config(value):
     if value.get("history_sessions") or value.get("history_results"):
         raise ValueError("B1随机搜索不读取研究历史选择候选")
     # Validate the same fixed training/budget fields, without exposing agent settings.
-    normalized = normalize_protocol({**value, "allowed_kinds": ["learning_rate"], "max_agent_calls": 1,
+    limits = dict(value)
+    unlimited = "max_session_process_seconds" in value and value["max_session_process_seconds"] is None
+    if unlimited:
+        limits["max_session_process_seconds"] = value["process_timeout_seconds"] * (value["max_trials"] + 1)
+    normalized = normalize_protocol({**limits, "allowed_kinds": ["learning_rate"], "max_agent_calls": 1,
                                      "initial_lr_upper_bound": high})
+    if unlimited:
+        normalized["max_session_process_seconds"] = None
     for name in ("agent", "max_agent_calls", "first_proposal_path", "history_sessions", "history_results"):
         normalized.pop(name, None)
     return normalized
