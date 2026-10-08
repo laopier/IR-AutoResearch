@@ -46,7 +46,7 @@
     }
   ],
   "agent": {
-    "codex_path": "/mnt/c/Users/皮/AppData/Local/OpenAI/Codex/bin/f544b3844e0f14e9/codex.exe",
+    "codex_path": "/mnt/c/Users/皮/AppData/Local/OpenAI/Codex/bin/5ea220ae823df3d7/codex.exe",
     "model": "gpt-6.1-sol",
     "reasoning_effort": "low",
     "timeout_seconds": 180,

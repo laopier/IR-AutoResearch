@@ -25,6 +25,7 @@ def main():
     for name in ("train.experiment", "train.mavi", "train.feature_transform", "prepare.dataset", "program.runner"):
         Path(sys.modules[name].__file__).resolve().relative_to(workspace)
     device = torch.device(config.get("device", "cuda"))
+    torch.set_num_threads(2)
     set_seed(config["seed"])
     recipe = config["recipe"]
     out = Path(config["out_dir"])

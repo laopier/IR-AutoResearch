@@ -1,0 +1,16 @@
+{
+  "seeds": [0, 1, 2],
+  "steps": 1000,
+  "batch_size": 2,
+  "val_batch_size": 1,
+  "baseline_initial_lr": 0.0002,
+  "lr_horizon_steps": 200000,
+  "checkpoint_every": 100,
+  "device": "cuda",
+  "baseline_cache_dir": "/mnt/d/Project/IR-AutoResearch/results/b0_shared128_1000_001",
+  "seed0_bootstrap": "/mnt/d/Project/IR-AutoResearch/results/b0_pilot128_seed0_500_001",
+  "data_root": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/data",
+  "train_manifest": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/train.csv",
+  "val_manifest": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/validation.csv",
+  "dataset_report": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/DATASET.json"
+}

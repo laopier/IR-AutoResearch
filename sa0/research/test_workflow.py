@@ -48,6 +48,7 @@ class WorkflowTests(unittest.TestCase):
         self.p = c.read_json(original / "sa0/research_config.json")
         self.p["full_selection_enabled"] = False  # retain v2 compatibility coverage
         self.p["dataset_report"] = None
+        self.p["baseline_cache_dir"] = None
         self.p.update(max_gpu_tasks=20, max_exploration_tasks=10)
         self.p.update(session_dir=str(self.root / "session"), data_root=str(self.root / "data"), device="cpu")
         for spec in self.p["stages"].values():
@@ -132,6 +133,28 @@ class WorkflowTests(unittest.TestCase):
         self.run_case([])
         self.assertEqual(len(self.prompts), before)
         self.assertEqual(len(self.configs), 10)
+
+    def test_shared_baseline_full_and_confirmation_reuse_without_new_attempt(self):
+        w = self.setup_workflow()
+        w.p["baseline_cache_dir"] = str(self.root / "shared")
+        def cached(owner, spec, workspace, seed, environment):
+            folder = self.root / "shared" / f"seed_{seed}"
+            folder.mkdir(parents=True)
+            config = {**w.p, **w.p["stages"]["full"], "seed": seed, "recipe": {"initial_lr": w.p["baseline_initial_lr"]},
+                      "out_dir": str(folder / "artifacts")}
+            record = self.fake_job(owner, config, folder, workspace)
+            (folder / "receipt.json").write_text("{}")
+            hashes = {name: c.sha256(folder / "artifacts" / name) for name in ("result.json", "checkpoint.pt", "training.jsonl")}
+            return folder, {"artifact_hashes": hashes}, record["result"]
+        with patch("sa0.research.baseline_cache.runtime_environment", return_value={"mock": True}), \
+             patch("sa0.research.baseline_cache.read", side_effect=cached):
+            w.load_shared_baselines()
+        first = w.job("B0", "full", 0)
+        w.s["phase"] = "finalization"
+        self.assertIs(w.job("B0", "confirmation", 0), first)
+        self.assertEqual(w.job("B0", "confirmation", 2)["seed"], 2)
+        self.assertEqual(len(w.s["tasks"]), 0)
+        self.assertEqual(len(w.s["external_baselines"]), 3)
 
     def test_no_winner_freezes_b0_without_extra_training(self):
         summary = self.run_case([{"action": "finalize", "reason": "no evidence", "untested_hypotheses": {"H1": "not run", "H2": "not run", "H3": "not run"}}])

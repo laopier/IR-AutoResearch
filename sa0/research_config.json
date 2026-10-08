@@ -7,7 +7,8 @@
   "batch_size": 2,
   "worker_timeout_seconds": 14400,
   "max_exploration_tasks": 18,
-  "session_dir": "/mnt/d/Project/IR-AutoResearch/results/sa0_pilot128_100_500_001",
+  "session_dir": "/mnt/d/Project/IR-AutoResearch/results/sa0_pilot128_100_1000_001",
+  "baseline_cache_dir": "/mnt/d/Project/IR-AutoResearch/results/b0_shared128_1000_001",
   "stages": {
     "low": {
       "steps": 100,
@@ -20,12 +21,12 @@
       "train_manifest": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/train.csv"
     },
     "full": {
-      "steps": 500,
+      "steps": 1000,
       "val_manifest": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/validation.csv",
       "train_manifest": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/train.csv"
     },
     "confirmation": {
-      "steps": 500,
+      "steps": 1000,
       "val_manifest": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/validation.csv",
       "train_manifest": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/train.csv"
     }

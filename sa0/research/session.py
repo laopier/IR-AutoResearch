@@ -137,6 +137,28 @@ class Workflow:
             "started_at": time.time(), "stop_reason": None, "finalist": None}
         self.save()
 
+    def load_shared_baselines(self):
+        cache = self.p.get("baseline_cache_dir")
+        if not cache:
+            return
+        from sa0.research import baseline_cache
+        env = baseline_cache.runtime_environment(self.p.get("device", "cuda"), 2)
+        spec = {**self.p, **self.p["stages"]["full"]}
+        imported = []
+        for seed in self.p["confirmation_seeds"]:
+            folder, receipt, result = baseline_cache.read(self.c, spec, Path(self.s["candidates"]["B0"]["workspace"]), seed, env)
+            imported.append({"task_id": f"SHARED_B0_SEED{seed}", "candidate_id": "B0", "stage": "full", "seed": seed,
+                "phase": "shared", "budget_bucket": "shared", "status": "completed", "scientific_valid": True,
+                "signature": self.signature("B0", "full", seed), "folder": str(folder),
+                "artifact_hashes": receipt["artifact_hashes"], "result": result,
+                "process_seconds": 0., "shared_cost_seconds": result["training_seconds"],
+                "receipt_sha256": self.c.sha256(folder / "receipt.json"), "recipe": result["recipe"]})
+        previous = self.s.get("external_baselines")
+        if previous is not None and previous != imported:
+            raise ValueError("已导入共享B0发生变化，禁止继续原会话")
+        self.s["external_baselines"] = imported
+        self.save()
+
     def check_contract(self):
         hashes = {}
         for stage in self.p["stages"].values():
@@ -149,6 +171,13 @@ class Workflow:
         for node in self.s["candidates"].values():
             if self.c.source_hashes(Path(node["workspace"])) != node["source_hashes"]:
                 raise RuntimeError("候选源码发生未登记修改")
+        for baseline in self.s.get("external_baselines", []):
+            folder = Path(baseline["folder"])
+            if self.c.sha256(folder / "receipt.json") != baseline["receipt_sha256"]:
+                raise RuntimeError("共享基线审计发生变化")
+            for name, value in baseline["artifact_hashes"].items():
+                if self.c.sha256(folder / "artifacts" / name) != value:
+                    raise RuntimeError("共享基线产物发生变化")
         lineage.check_tree(self.s["candidates"])
 
     def ask(self, purpose, request):
@@ -170,7 +199,7 @@ class Workflow:
                    "full_task_reserve": self.p.get("full_task_reserve"),
                    "hypotheses": self.s["hypotheses"], "candidates": self.s["candidates"],
                    "last_action_error": self.s.get("last_action_error"),
-                   "experiments": self.s["tasks"], "interpretations": self.s["interpretations"],
+                   "experiments": self.s["tasks"], "shared_baselines": self.s.get("external_baselines", []), "interpretations": self.s["interpretations"],
                    "prior_research": [self.c.read_json(Path(call["folder"]) / "research.json")
                                       for call in self.s["calls"] if (Path(call["folder"]) / "research.json").is_file()],
                    "source": {key: {p: (Path(n["workspace"]) / p).read_text(encoding="utf-8") for p in sorted(lineage.ALLOWED_FILES)}
@@ -235,7 +264,7 @@ class Workflow:
         bucket = ("confirmation" if phase == "finalization" else "full_selection" if self.s["phase"] == "full_selection"
                   else "baseline_init" if self.s["phase"] == "planning" and key == "B0" and stage == "full" else "screening")
         sig = self.signature(key, stage, seed)
-        for old in self.s["tasks"]:
+        for old in self.s["tasks"] + self.s.get("external_baselines", []):
             if old["signature"] == sig and old["status"] == "completed":
                 for name, value in old["artifact_hashes"].items():
                     if self.c.sha256(Path(old["folder"]) / "artifacts" / name) != value:
@@ -381,7 +410,7 @@ class Workflow:
         baseline = None
         if stage != "smoke":
             # Reserve enough slots for both matched baseline and candidate before either launches.
-            needed = sum(not any(t["signature"] == self.signature(k, stage, seed) and t["status"] == "completed" for t in self.s["tasks"]) for k in ("B0", key))
+            needed = sum(not any(t["signature"] == self.signature(k, stage, seed) and t["status"] == "completed" for t in self.s["tasks"] + self.s.get("external_baselines", [])) for k in ("B0", key))
             if needed > min(self.p["max_exploration_tasks"] - self.count("exploration"), self.p["max_gpu_tasks"] - len(self.s["tasks"])):
                 raise ValueError("匹配对照与候选的剩余额度不足")
             if self.p["full_selection_enabled"] and stage == "low" and needed > self.screening_remaining():
@@ -614,6 +643,9 @@ class Workflow:
                    "token_usage": token_totals, "unknown_usage_calls": unknown,
                    "worker_process_seconds": sum(t.get("process_seconds", 0) for t in self.s["tasks"]),
                    "training_seconds": sum(t.get("result", {}).get("training_seconds", 0) for t in self.s["tasks"]),
+                   "external_baselines": self.s.get("external_baselines", []),
+                   "shared_baseline_training_seconds": sum(t["shared_cost_seconds"] for t in self.s.get("external_baselines", [])),
+                   "shared_cost_note": "共享B0成本单列，不计为本会话新训练；跨组汇总须去重，同预算科研对照仍需分摊",
                    "gpu_allocation_seconds": None, "queue_seconds": None,
                    "wall_seconds": time.time() - self.s["started_at"], "formal_run": False,
                    "hidden_evaluation": "not_configured; requires independent evaluator", "frozen_candidate_id": self.s.get("frozen_candidate_id"),
@@ -629,6 +661,7 @@ class Workflow:
         self.root.mkdir(parents=True, exist_ok=True)
         with session_lock(self.root):
             self.initialize()
+            self.load_shared_baselines()
             try:
                 if self.s["phase"] == "completed":
                     self.report()

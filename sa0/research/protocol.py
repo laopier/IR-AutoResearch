@@ -7,6 +7,8 @@ STAGES = ("smoke", "low", "full", "confirmation")
 
 def validate(config):
     p = copy.deepcopy(config)
+    if p.get("baseline_cache_dir") is not None and (not isinstance(p["baseline_cache_dir"], str) or not p["baseline_cache_dir"]):
+        raise ValueError("baseline_cache_dir须为空或非空路径字符串")
     p.setdefault("full_selection_enabled", False)
     if type(p["full_selection_enabled"]) is not bool:
         raise ValueError("full_selection_enabled须为布尔值")

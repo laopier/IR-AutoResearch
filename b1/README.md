@@ -1,5 +1,7 @@
 # B1 固定 MAVI 随机学习率搜索
 
+2026-10-08默认更新为1000步、新会话b1_pilot128_random1000_001。B1暂不导入共享B0，仍自行建立匹配基线；旧500步说明为历史预跑记录。
+
 ```bash
 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 python -m b1.controller
 ```
