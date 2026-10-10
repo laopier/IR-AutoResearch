@@ -22,7 +22,7 @@ def digest(value):
 
 def execute_job(c, config, folder, workspace):
     if config.get("device", "cuda") == "cuda":
-        gpu_lock = c.ROOT / "results/.research_v2_gpu_lock"
+        gpu_lock = c.ROOT / "results/.research_v3_gpu_lock"
         gpu_lock.mkdir(parents=True, exist_ok=True)
         with session_lock(gpu_lock):
             return _execute_job(c, config, folder, workspace)
@@ -86,7 +86,7 @@ class Workflow:
         self.root.mkdir(parents=True, exist_ok=True)
         if self.state_path.exists():
             if self.c.read_json(self.root / "protocol.json") != self.p:
-                raise ValueError("v2协议变化，请使用新会话")
+                raise ValueError("v3协议变化，请使用新会话")
             self.s = self.c.read_json(self.state_path)
             self.check_contract()
             for call in self.s["calls"]:
@@ -167,7 +167,7 @@ class Workflow:
             raise RuntimeError("数据或阶段清单变化")
         expected = self.c.read_json(self.root / "harness_hashes.json")
         if {name: self.c.sha256(self.c.ROOT / name) for name in expected} != expected:
-            raise RuntimeError("执行代码变化，不能续跑v2旧会话")
+            raise RuntimeError("执行代码变化，不能续跑v3旧会话")
         for node in self.s["candidates"].values():
             if self.c.source_hashes(Path(node["workspace"])) != node["source_hashes"]:
                 raise RuntimeError("候选源码发生未登记修改")
@@ -192,6 +192,7 @@ class Workflow:
                    "stage_specs": self.p["stages"], "task_limits": {"total": self.p["max_gpu_tasks"],
                        "exploration": self.p["max_exploration_tasks"], "screening": self.p.get("max_screening_tasks"),
                        "full_reserve": self.p.get("full_task_reserve"), "max_full_candidates": self.p.get("max_full_candidates")},
+                   "low_gate": self.p["low_gate"],
                    "remaining_exploration_tasks": self.p["max_exploration_tasks"] - self.count("exploration"),
                    "remaining_gpu_tasks": self.p["max_gpu_tasks"] - len(self.s["tasks"]),
                    "phase": self.s["phase"], "eligible_full_candidates": self.eligible_full(),
@@ -207,11 +208,17 @@ class Workflow:
         text = (self.root / "instructions.md").read_text(encoding="utf-8") + "\n反馈：\n" + json.dumps(context, ensure_ascii=False, allow_nan=False) + "\n请求：\n" + request
         if self.p["condition"] == "SA1":
             text += "\n可自主检索；返回{payload:本轮所需对象,research:{status,summary,sources}}。sources含url/title/used/reason；不得虚构来源。"
+            if purpose in self.p["agent"].get("required_search_purposes", []):
+                text += "\n本轮必须实际使用内置web_search检索，并返回research.status=searched及真实来源；不得用not_needed替代。"
         else:
             text += "\n离线，不检索；直接返回本轮所需JSON对象。"
         started = time.perf_counter()
         try:
             answer = agent.call(text, folder, self.p["agent"])
+            if purpose in self.p["agent"].get("required_search_purposes", []):
+                research = self.c.read_json(folder / "research.json")
+                if research.get("status") != "searched":
+                    raise ValueError(f"{purpose}阶段要求实际联网检索")
             row["status"] = "completed"
             return answer
         except BaseException as error:
@@ -365,7 +372,8 @@ class Workflow:
             raise ValueError("解释动作无效")
         metric = bool(row.get("metrics_ok"))
         mechanism = self.mechanistic(row)
-        labels = (["metric_progress"] if metric else []) + (["mechanistic_progress"] if mechanism else [])
+        screening = bool(row.get("screening_promising"))
+        labels = (["metric_progress"] if metric else ["screening_signal"] if screening else []) + (["mechanistic_progress"] if mechanism else [])
         item = {**answer, "task_id": row["task_id"], "labels": labels or ["no_progress"],
                 "observed_metrics": row["result"]["final_metrics"], "evidence_task_ids": [row["task_id"], row["baseline_task_id"]],
                 "mechanism_evidence_scope": "predeclared matched test; preliminary support, not causal proof" if mechanism else None}
@@ -383,9 +391,19 @@ class Workflow:
         self.save()
 
     def can_promote(self, key):
-        wins = [t for t in self.s["tasks"] if t["candidate_id"] == key and t["stage"] == "low" and t.get("metrics_ok") and t.get("scientific_valid") and t["status"] == "completed"]
-        if len({t["seed"] for t in wins}) >= 2:
+        pairs = []
+        for task in self.s["tasks"]:
+            if (task["candidate_id"] != key or task["stage"] != "low" or task["status"] != "completed"
+                    or not task.get("scientific_valid") or not task.get("baseline_task_id")):
+                continue
+            baseline = next((item for item in self.s["tasks"]
+                             if item["task_id"] == task["baseline_task_id"]), None)
+            if baseline and baseline.get("scientific_valid") and baseline["status"] == "completed":
+                pairs.append((task["seed"], baseline["result"]["final_metrics"], task["result"]["final_metrics"]))
+        if protocol.aggregate_low_gate(pairs, self.p["low_gate"]):
             return True
+        wins = [t for t in self.s["tasks"] if t["candidate_id"] == key and t["stage"] == "low" and t.get("metrics_ok") and t.get("scientific_valid") and t["status"] == "completed"]
+        # Retain the preregistered strict-win plus matched mechanistic-ablation route.
         return bool(wins) and any(t.get("scientific_valid") and "mechanistic_progress" in self.s["interpretations"].get(t["task_id"], {}).get("labels", [])
                                   and self.s["candidates"][t["candidate_id"]].get("mechanism_test", {}).get("reference_candidate_id") == key
                                   for t in self.s["tasks"] if self.s["candidates"][t["candidate_id"]].get("mechanism_test"))
@@ -403,10 +421,18 @@ class Workflow:
             raise ValueError("阶段seed未预先授权")
         if key not in self.s["candidates"]:
             raise ValueError("候选不存在")
+        if stage == "low" and seed == 1:
+            seed0 = [task for task in self.s["tasks"]
+                     if task["candidate_id"] == key and task["stage"] == "low" and task["seed"] == 0
+                     and task["status"] == "completed" and task.get("scientific_valid")]
+            if not seed0:
+                raise ValueError("V3漏斗要求先完成同候选low seed0")
+            if not seed0[-1].get("screening_promising"):
+                raise ValueError("low seed0未通过宽松筛选门，禁止消耗seed1预算")
         if (stage != "full" or not self.p["full_selection_enabled"]) and any(self.s["hypotheses"][h]["status"] != "open" for h in self.s["candidates"][key]["hypothesis_ids"]):
             raise ValueError("方向须先重新评估")
         if stage == "full" and not self.can_promote(key):
-            raise ValueError("尚未满足两seed改善或改善加匹配关键消融的晋级证据")
+            raise ValueError("尚未满足双seed聚合门或严格改善加匹配关键消融的晋级证据")
         baseline = None
         if stage != "smoke":
             # Reserve enough slots for both matched baseline and candidate before either launches.
@@ -421,7 +447,12 @@ class Workflow:
         row = self.job(key, stage, seed)
         if row["status"] == "completed" and baseline:
             try:
+                baseline_metrics = baseline["result"]["final_metrics"]
+                candidate_metrics = row["result"]["final_metrics"]
                 row.update(metrics_ok=self.compare(row, baseline), baseline_task_id=baseline["task_id"],
+                           metric_delta=protocol.metric_delta(baseline_metrics, candidate_metrics),
+                           screening_promising=(protocol.promising(baseline_metrics, candidate_metrics, self.p["low_gate"])
+                                                if stage == "low" else None),
                            decision={"keep": None, "budget_status": "workflow_validation"})
             except ValueError as error:
                 row.update(scientific_valid=False, comparison_status="invalid", reason=str(error))
@@ -609,7 +640,7 @@ class Workflow:
                 "environment": row["result"]["environment"], "task_config": self.c.read_json(Path(row["folder"]) / "experiment.json"),
                 "lineage": self.s["candidates"], "data_hashes": self.c.read_json(self.root / "data_hashes.json"),
                 "source_hashes": self.c.source_hashes(temp / "source"), "checkpoint_sha256": self.c.sha256(temp / "checkpoint.pt"),
-                "mode": self.p["mode"], "formal_keep": None, "selection_rule": "complete-stage metric gate, MAE/NRMS/SSIM ranking, paired confirmation mean",
+                "mode": self.p["mode"], "formal_keep": None, "selection_rule": "V3 seed0 funnel, paired-low aggregate gate, strict full and paired-confirmation mean",
                 "selection_reason": self.s.get("selection_reason", self.s.get("stop_reason")),
                 "confirmation": confirmation, "inference": "python -m sa0.research.inference --frozen FINAL --feature NPY --output NPY"})
             temp.rename(freeze)
@@ -632,7 +663,7 @@ class Workflow:
         token_totals = {field: sum(u.get(field, 0) for u in usage if isinstance(u, dict) and type(u.get(field, 0)) is int)
                         for field in ("input_tokens", "output_tokens", "cached_input_tokens", "reasoning_output_tokens")}
         unknown = sum(call.get("cli", {}).get("reported_tokens") is None for call in calls)
-        summary = {"version": 2, "condition": self.p["condition"], "mode": self.p["mode"], "phase": self.s["phase"],
+        summary = {"version": 3, "condition": self.p["condition"], "mode": self.p["mode"], "phase": self.s["phase"],
                    "stop_reason": self.s.get("stop_reason"), "gpu_task_attempts": len(self.s["tasks"]),
                    "exploration_attempts": self.count("exploration"), "finalization_attempts": self.count("finalization"),
                    "screening_attempts": self.bucket_count("screening"), "full_selection_attempts": self.bucket_count("full_selection"),
@@ -650,6 +681,7 @@ class Workflow:
                    "wall_seconds": time.time() - self.s["started_at"], "formal_run": False,
                    "hidden_evaluation": "not_configured; requires independent evaluator", "frozen_candidate_id": self.s.get("frozen_candidate_id"),
                    "untested_hypotheses": self.s.get("untested_hypotheses", {}),
+                   "pause_history": self.s.get("pause_history", []),
                    "hypotheses": self.s["hypotheses"], "tasks": self.s["tasks"], "candidate_lineage": self.s["candidates"]}
         atomic_json(self.root / "summary.json", summary)
         text = "# 本地研究流程报告\n\n" + json.dumps({k: v for k, v in summary.items() if k not in {"tasks", "candidate_lineage", "hypotheses"}}, ensure_ascii=False, indent=2)
@@ -667,8 +699,13 @@ class Workflow:
                     self.report()
                     return
                 if self.s["phase"] == "paused":
+                    reason = self.s.get("stop_reason")
+                    if reason:
+                        self.s.setdefault("pause_history", []).append({"reason": reason, "resumed_at": time.time()})
                     self.s["phase"] = self.s.pop("resume_phase", "exploration")
+                    self.s["stop_reason"] = None
                     self.s["action_errors"] = 0
+                    self.save()
                 if not self.s["hypotheses"]:
                     base = self.job("B0", "full", 0)
                     if base["status"] != "completed":
@@ -725,7 +762,7 @@ class Workflow:
                 raise
             finally:
                 self.report()
-                print("v2归档：", self.root / "summary.json", flush=True)
+                print("v3归档：", self.root / "summary.json", flush=True)
 
 
 def scheduler_changed(base, candidate):
@@ -737,9 +774,9 @@ def scheduler_changed(base, candidate):
 
 
 ACTION_SCHEMA = '''选择一个动作，仅返回JSON：
-1. {action:"candidate",candidate:{candidate_id:"C数字",parent_candidate_ids:["B0或C编号"],hypothesis_ids:["H编号"],change:{config:{initial_lr/ loss/optimizer/scheduler配置},edits:[{path,old,new}],resolved_sources:{}},expected_effect:文字,falsification_condition:文字,estimated_gpu_seconds:数值,mechanism_test:null或{reference_candidate_id:父候选,metric:指标,direction:increase/decrease,min_delta:非负数}}。
+1. {action:"candidate",candidate:{candidate_id:"C数字",parent_candidate_ids:["B0或C编号"],hypothesis_ids:["H编号"],change:{config:{initial_lr/ loss/optimizer/scheduler配置},edits:[{path,old,new}],resolved_sources:{}},expected_effect:文字,falsification_condition:文字,estimated_gpu_seconds:数值,mechanism_test:null或{reference_candidate_id:父候选,metric:mae_float/nrms_official/ssim_official,direction:increase/decrease,min_delta:非负数}}。
 配置loss支持{name:l1/mse/smooth_l1,scale,beta}，optimizer支持{name:adamw/adam/sgd,weight_decay,momentum}，scheduler支持{name:cosine/constant,min_lr}。不修改的字段省略。
-2. {action:"experiment",candidate_id,stage:"smoke/low/full",seed:0或1}；full仅seed0，须有同候选low两seed改善，或low改善加匹配关键消融证据。
+2. {action:"experiment",candidate_id,stage:"smoke/low/full",seed:0或1}；先广泛跑low seed0，仅screening_promising候选可跑seed1；full仅seed0，须通过双seed聚合门，或严格low改善加匹配关键消融证据。
 3. {action:"reconsider",hypothesis_id,decision:"continue/close",reason:文字,evidence_task_ids:[有效任务ID]}。
 4. {action:"add_hypothesis",hypothesis:全部假设字段,evidence_task_ids:[已分析任务ID],novelty_reason:文字}。
 5. {action:"finalize",reason:文字,untested_hypotheses:{H编号:未研究理由}}。

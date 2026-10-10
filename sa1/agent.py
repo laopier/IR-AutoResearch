@@ -3,6 +3,7 @@ import json
 import subprocess
 import time
 from sa1.proposal import validate_response
+from sa0.research.codex_cli import resolve
 
 
 def parse_events(text):
@@ -35,8 +36,9 @@ def call_agent(prompt, log_path, settings):
         raise FileExistsError("调用记录已存在，不覆盖")
     if len(prompt) > settings["max_prompt_chars"]:
         raise ValueError("输入超过max_prompt_chars")
+    codex_path = resolve(settings)
     command = [
-        settings["codex_path"], "exec", "--sandbox", "read-only",
+        codex_path, "exec", "--sandbox", "read-only",
         "--ignore-user-config", "--ephemeral", "--color", "never", "--json",
         "-m", settings["model"], "-c", 'web_search="live"',
         "-c", "model_reasoning_effort=" + json.dumps(settings["reasoning_effort"]),
@@ -66,7 +68,8 @@ def call_agent(prompt, log_path, settings):
     # Save observed tool evidence even when the proposed response is malformed.
     audit = {"web_search_mode": "live", "observed_search_events": searches,
              "observed_search_event_count": len(searches), "cli_usage": usage,
-             "source_claims_verified": False}
+             "source_claims_verified": False, "resolved_codex_path": codex_path,
+             "model": settings["model"], "reasoning_effort": settings["reasoning_effort"]}
     log_path.with_name("search_audit.json").write_text(
         json.dumps(audit, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
     proposal, research = validate_response(json.loads(response))

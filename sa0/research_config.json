@@ -7,11 +7,11 @@
   "batch_size": 2,
   "worker_timeout_seconds": 14400,
   "max_exploration_tasks": 18,
-  "session_dir": "/mnt/d/Project/IR-AutoResearch/results/sa0_pilot128_100_1000_001",
+  "session_dir": "/mnt/d/Project/IR-AutoResearch/results/sa0_pilot128_v3_200_1000_001",
   "baseline_cache_dir": "/mnt/d/Project/IR-AutoResearch/results/b0_shared128_1000_001",
   "stages": {
     "low": {
-      "steps": 100,
+      "steps": 200,
       "val_manifest": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/validation.csv",
       "train_manifest": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/train.csv"
     },
@@ -32,19 +32,21 @@
     }
   },
   "agent": {
-    "model": "gpt-6.1-sol",
+    "model": "gpt-5.6-sol",
     "timeout_seconds": 900,
-    "codex_path": "/mnt/c/Users/皮/AppData/Local/OpenAI/Codex/bin/f544b3844e0f14e9/codex.exe",
+    "codex_path": "auto",
+    "codex_bin_root": "/mnt/c/Users/皮/AppData/Local/OpenAI/Codex/bin",
     "max_prompt_chars": 150000,
-    "reasoning_effort": "low",
-    "web_search": "disabled"
+    "reasoning_effort": "high",
+    "web_search": "disabled",
+    "required_search_purposes": []
   },
   "mode": "workflow_validation",
   "device": "cuda",
   "data_root": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/data",
   "baseline_initial_lr": 0.0002,
   "initial_lr_upper_bound": 0.001,
-  "version": 2,
+  "version": 3,
   "max_gpu_tasks": 24,
   "val_batch_size": 1,
   "confirmation_seeds": [
@@ -57,5 +59,21 @@
   "max_screening_tasks": 13,
   "full_task_reserve": 4,
   "max_full_candidates": 2,
+  "low_gate": {
+    "seed0_max_regression": {
+      "mae_float": 0.0005,
+      "nrms_official": 0.0005,
+      "ssim_official": 0.0005
+    },
+    "promotion_mean_tolerance": {
+      "nrms_official": 0.0005,
+      "ssim_official": 0.0005
+    },
+    "promotion_per_seed_max_regression": {
+      "mae_float": 0.001,
+      "nrms_official": 0.001,
+      "ssim_official": 0.001
+    }
+  },
   "dataset_report": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/DATASET.json"
 }

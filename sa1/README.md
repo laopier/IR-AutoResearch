@@ -1,8 +1,8 @@
 # SA1 联网自主研究
 
-默认入口已升级到共享假设驱动v2，读取sa1/research_config.json，详见
+默认入口已升级到共享假设驱动V3，读取sa1/research_config.json，详见[../sa0/RESEARCH_V3.md](../sa0/RESEARCH_V3.md)。旧V2说明见
 [共同协议](../sa0/RESEARCH_V2.md)。下文是旧版配置/结果说明，使用`--legacy`访问旧入口。
-当前128/32预跑、low100/full500和强制full-selection见[预跑配置](../PILOT_RUN_20261007.md)。
+当前V3的128/32预跑使用low200/full1000和强制full-selection；旧预跑配置保留在[历史说明](../PILOT_RUN_20261007.md)。
 
 入口：
 
@@ -17,7 +17,7 @@ SA1不复制第二套训练器。sa0/session.py只新增可选的prompt/执行�
 SA0继续使用原离线调用。旧归档保留，执行代码更新后不沿用旧会话继续研究。
 
 agent只开放内置web_search=live，shell/文件修改/多agent仍关闭。
-每轮自主决定是否检索，联网权限不意味着实际使用网络。
+首个research_plan调用必须实际检索；后续轮次在本地证据足够时可记录not_needed。联网权限本身不能替代对真实搜索事件的审计。
 最终回复包含proposal与research；控制器保存检索信息，再把proposal交给相同训练接口。
 每轮额外保存events.jsonl（CLI原始事件）、agent_envelope.txt（原始最终回复）、
 research.json（来源及采用理由）、search_audit.json（实际工具事件和CLI usage）。

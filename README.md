@@ -16,10 +16,10 @@ IR-drop 预测器与自主研究流程的学习、复现和实验管理仓库。
 
 ## 从哪里开始阅读
 
-当前训练前入口见[1000步与共享B0说明](PILOT_1000_SHARED_B0_20261008.md)：先准备B0 seed0/1/2，再让SA0/SA1复用；low100步，full与confirmation1000步。
+当前训练前入口见[1000步与共享B0说明](PILOT_1000_SHARED_B0_20261008.md)：先准备B0 seed0/1/2，再让SA0/SA1复用。V3的low为200步，full与confirmation保持1000步。
 
-最新默认SA0/SA1入口采用[假设驱动v2协议](sa0/RESEARCH_V2.md)：三个假设、显式谱系、
-20步筛选、100步模拟完整训练和三个seed确认。共享实现位于sa0/research/。
+最新默认SA0/SA1入口采用[假设驱动V3协议](sa0/RESEARCH_V3.md)：seed0漏斗、双seed聚合晋级、SA1首轮真实联网及严格full/confirmation。旧[假设驱动v2协议](sa0/RESEARCH_V2.md)保留作为历史说明：三个假设、显式谱系、
+旧筛选、模拟完整训练和三个seed确认设计。共享实现位于sa0/research/。
 旧config.json和研究轨迹保留，`--legacy`可访问旧入口。当前只允许本地workflow_validation。
 
 2026年10月6日版本为[导师讨论用代码快照](REVIEW_FREEZE_20261006.md)，任务额度和阶段门槛仍待讨论，

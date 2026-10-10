@@ -3,18 +3,22 @@ import json
 import subprocess
 import time
 from sa1.agent import parse_events
+from sa0.research.codex_cli import resolve
 
 
 def call(prompt, folder, settings):
     folder.mkdir()
     (folder / "input.md").write_text(prompt, encoding="utf-8")
     mode = settings["web_search"]
-    command = [settings["codex_path"], "exec", "--sandbox", "read-only", "--ignore-user-config",
+    codex_path = resolve(settings)
+    command = [codex_path, "exec", "--sandbox", "read-only", "--ignore-user-config",
                "--ephemeral", "--color", "never", "--json", "-m", settings["model"],
                "-c", "web_search=" + json.dumps(mode), "-c", "model_reasoning_effort=" + json.dumps(settings["reasoning_effort"]),
                "-c", "features.shell_tool=false", "-c", "features.unified_exec=false", "-c", "features.multi_agent=false", "-"]
     started = time.perf_counter()
-    record = {"status": "running", "reported_tokens": None, "usage": None}
+    record = {"status": "running", "reported_tokens": None, "usage": None,
+              "resolved_codex_path": codex_path, "model": settings["model"],
+              "reasoning_effort": settings["reasoning_effort"], "web_search": mode}
     (folder / "record.json").write_text(json.dumps(record), encoding="utf-8")
     stdout, stderr = "", ""
     try:

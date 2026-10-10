@@ -12,8 +12,8 @@ def validate(config):
     p.setdefault("full_selection_enabled", False)
     if type(p["full_selection_enabled"]) is not bool:
         raise ValueError("full_selection_enabled须为布尔值")
-    if p.get("version") != 2 or p.get("condition") not in {"SA0", "SA1"}:
-        raise ValueError("需要version=2及SA0/SA1条件")
+    if p.get("version") != 3 or p.get("condition") not in {"SA0", "SA1"}:
+        raise ValueError("需要version=3及SA0/SA1条件")
     if p.get("mode") != "workflow_validation":
         raise ValueError("当前版本只开放本地流程验证；正式数据、资源预算与隐藏入口尚未冻结")
     for name in ("max_gpu_tasks", "max_exploration_tasks", "batch_size", "val_batch_size", "lr_horizon_steps"):
@@ -48,11 +48,62 @@ def validate(config):
     expected = "live" if p["condition"] == "SA1" else "disabled"
     if p["agent"].get("web_search") != expected:
         raise ValueError("联网权限与研究条件不一致")
+    required = p["agent"].get("required_search_purposes", [])
+    if not isinstance(required, list) or any(x not in {"research_plan"} for x in required):
+        raise ValueError("required_search_purposes当前仅允许research_plan")
+    if p["condition"] == "SA0" and required:
+        raise ValueError("SA0禁止要求联网检索")
+    if p["condition"] == "SA1" and required != ["research_plan"]:
+        raise ValueError("SA1 V3必须在research_plan阶段真实检索")
+    gate = p.get("low_gate")
+    if not isinstance(gate, dict) or set(gate) != {
+        "seed0_max_regression", "promotion_mean_tolerance", "promotion_per_seed_max_regression"
+    }:
+        raise ValueError("low_gate字段不完整")
+    expected_metrics = set(METRICS)
+    for name in ("seed0_max_regression", "promotion_per_seed_max_regression"):
+        values = gate[name]
+        if not isinstance(values, dict) or set(values) != expected_metrics:
+            raise ValueError(f"{name}必须覆盖三项指标")
+        if any(type(value) not in (int, float) or not math.isfinite(value) or value < 0 for value in values.values()):
+            raise ValueError(f"{name}必须为非负有限数")
+    tolerances = gate["promotion_mean_tolerance"]
+    if not isinstance(tolerances, dict) or set(tolerances) != {"nrms_official", "ssim_official"}:
+        raise ValueError("promotion_mean_tolerance须覆盖NRMS和SSIM")
+    if any(type(value) not in (int, float) or not math.isfinite(value) or value < 0 for value in tolerances.values()):
+        raise ValueError("promotion_mean_tolerance必须为非负有限数")
     return p
 
 
 def improved(base, cand):
     return cand["mae_float"] < base["mae_float"] and cand["nrms_official"] <= base["nrms_official"] and cand["ssim_official"] >= base["ssim_official"]
+
+
+def metric_delta(base, cand):
+    return {key: cand[key] - base[key] for key in METRICS}
+
+
+def within_regression_caps(delta, caps):
+    return (delta["mae_float"] <= caps["mae_float"]
+            and delta["nrms_official"] <= caps["nrms_official"]
+            and delta["ssim_official"] >= -caps["ssim_official"])
+
+
+def promising(base, cand, gate):
+    return within_regression_caps(metric_delta(base, cand), gate["seed0_max_regression"])
+
+
+def aggregate_low_gate(pairs, gate):
+    if len(pairs) != 2 or {seed for seed, _, _ in pairs} != {0, 1}:
+        return False
+    deltas = [metric_delta(base, cand) for _, base, cand in pairs]
+    if not all(within_regression_caps(delta, gate["promotion_per_seed_max_regression"]) for delta in deltas):
+        return False
+    mean = {key: sum(delta[key] for delta in deltas) / len(deltas) for key in METRICS}
+    tolerance = gate["promotion_mean_tolerance"]
+    return (mean["mae_float"] < 0
+            and mean["nrms_official"] <= tolerance["nrms_official"]
+            and mean["ssim_official"] >= -tolerance["ssim_official"])
 
 
 def mean_metrics(results):

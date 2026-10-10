@@ -46,7 +46,7 @@ class WorkflowTests(unittest.TestCase):
         (self.root / "train.csv").write_text("x.npy,y.npy\n")
         (self.root / "val.csv").write_text("x.npy,y.npy\n")
         self.p = c.read_json(original / "sa0/research_config.json")
-        self.p["full_selection_enabled"] = False  # retain v2 compatibility coverage
+        self.p["full_selection_enabled"] = False  # retain non-reserved-budget coverage
         self.p["dataset_report"] = None
         self.p["baseline_cache_dir"] = None
         self.p.update(max_gpu_tasks=20, max_exploration_tasks=10)
@@ -257,6 +257,52 @@ class WorkflowTests(unittest.TestCase):
         cand[2]["final_metrics"]["mae_float"] = .3
         self.assertFalse(protocol.improved(protocol.mean_metrics(base), protocol.mean_metrics(cand)))
 
+    def test_v3_aggregate_gate_allows_small_single_seed_regression(self):
+        gate = self.p["low_gate"]
+        pairs = [
+            (0, {"mae_float": .1000, "nrms_official": .2000, "ssim_official": .6000},
+                {"mae_float": .0988, "nrms_official": .1994, "ssim_official": .6010}),
+            (1, {"mae_float": .1000, "nrms_official": .2000, "ssim_official": .6000},
+                {"mae_float": .1004, "nrms_official": .2005, "ssim_official": .5995}),
+        ]
+        self.assertTrue(protocol.aggregate_low_gate(pairs, gate))
+        pairs[1][2]["mae_float"] = .1011
+        self.assertFalse(protocol.aggregate_low_gate(pairs, gate))
+
+    def test_seed1_requires_promising_completed_seed0(self):
+        w = self.setup_workflow()
+        w.action({"action": "candidate", "candidate": candidate()})
+        with self.assertRaisesRegex(ValueError, "seed0"):
+            w.experiment("C1", "low", 1)
+        original = self.fake_job
+        def regressing(owner, config, folder, workspace):
+            row = original(owner, config, folder, workspace)
+            if config["recipe"]["initial_lr"] != self.p["baseline_initial_lr"]:
+                row["result"]["final_metrics"] = {"mae_float": .101, "nrms_official": .2, "ssim_official": .6}
+                (Path(config["out_dir"]) / "result.json").write_text(json.dumps(row["result"]))
+            return row
+        with patch("sa0.research.session.execute_job", side_effect=regressing), \
+             patch("sa0.research.session.agent.call", side_effect=self.fake_agent([])), patch("builtins.print"):
+            first = w.experiment("C1", "low", 0)
+        self.assertFalse(first["screening_promising"])
+        with self.assertRaisesRegex(ValueError, "宽松筛选门"):
+            w.experiment("C1", "low", 1)
+
+    def test_resume_clears_stale_stop_reason_and_preserves_history(self):
+        w = self.setup_workflow()
+        w.s.update(phase="paused", resume_phase="finalization", stop_reason="KeyboardInterrupt: ")
+        w.save()
+        observed = {}
+        def finish(owner):
+            observed["stop_reason"] = owner.s.get("stop_reason")
+            owner.s["phase"] = "completed"
+            owner.save()
+        with patch.object(Workflow, "finalize", autospec=True, side_effect=finish), patch("builtins.print"):
+            Workflow(c, self.p).run()
+        state = c.read_json(self.root / "session/state.json")
+        self.assertIsNone(observed["stop_reason"])
+        self.assertEqual(state["pause_history"][0]["reason"], "KeyboardInterrupt: ")
+
     def test_changed_protocol_or_data_blocks_resume(self):
         self.run_case([{"action": "finalize", "reason": "done", "untested_hypotheses": {"H1": "not tested", "H2": "not tested", "H3": "not tested"}}])
         changed = copy.deepcopy(self.p)
@@ -276,6 +322,25 @@ class WorkflowTests(unittest.TestCase):
         for prompt in self.prompts:
             self.assertNotIn('"hidden_labels"', prompt)
             self.assertNotIn('"hidden_metrics"', prompt)
+
+    def test_sa1_research_plan_requires_observed_search_status(self):
+        value = copy.deepcopy(self.p)
+        value["condition"] = "SA1"
+        value["agent"]["web_search"] = "live"
+        value["agent"]["required_search_purposes"] = ["research_plan"]
+        w = Workflow(c, value)
+        w.initialize()
+        def answer(status):
+            def invoke(prompt, folder, settings):
+                folder.mkdir()
+                (folder / "research.json").write_text(json.dumps({"status": status, "summary": "audit", "sources": []}))
+                return initial_plan()
+            return invoke
+        with patch("sa0.research.session.agent.call", side_effect=answer("not_needed")):
+            with self.assertRaisesRegex(ValueError, "要求实际联网检索"):
+                w.ask("research_plan", "plan")
+        with patch("sa0.research.session.agent.call", side_effect=answer("searched")):
+            self.assertEqual(w.ask("research_plan", "plan")["primary_hypothesis_id"], "H1")
 
     def test_confirmation_two_wins_one_loss_reports_and_accepts_mean(self):
         original = self.fake_job
@@ -382,9 +447,9 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             w.job("B0", "confirmation", 0)
 
-    def test_global_gpu_lock_rejects_concurrent_v2_worker(self):
+    def test_global_gpu_lock_rejects_concurrent_v3_worker(self):
         from sa0.research.session import execute_job
-        lock = self.root / "results/.research_v2_gpu_lock"
+        lock = self.root / "results/.research_v3_gpu_lock"
         lock.mkdir(parents=True)
         with session_lock(lock):
             with patch("sa0.research.session._execute_job") as worker:
