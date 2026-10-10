@@ -7,7 +7,7 @@
   "batch_size": 2,
   "worker_timeout_seconds": 14400,
   "max_exploration_tasks": 18,
-  "session_dir": "/mnt/d/Project/IR-AutoResearch/results/sa1_pilot128_v3_200_1000_001",
+  "session_dir": "/mnt/d/Project/IR-AutoResearch/results/sa1_pilot128_v4_200_1000_001",
   "baseline_cache_dir": "/mnt/d/Project/IR-AutoResearch/results/b0_shared128_1000_001",
   "stages": {
     "low": {
@@ -48,7 +48,7 @@
   "data_root": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/data",
   "baseline_initial_lr": 0.0002,
   "initial_lr_upper_bound": 0.001,
-  "version": 3,
+  "version": 4,
   "max_gpu_tasks": 24,
   "val_batch_size": 1,
   "confirmation_seeds": [
@@ -77,5 +77,17 @@
       "ssim_official": 0.001
     }
   },
+  "portfolio": {
+    "initial_items": 4,
+    "min_seed0_before_seed1": 4,
+    "max_seed1_candidates": 2,
+    "stagnant_seed0_limit": 4,
+    "score_weights": {
+      "mae_float": 0.5,
+      "nrms_official": 0.25,
+      "ssim_official": 0.25
+    }
+  },
+  "probe_fractions": [0.25, 0.5, 0.75, 1.0],
   "dataset_report": "/mnt/d/Project/datasets/IRDrop_N28_pilot_160/DATASET.json"
 }

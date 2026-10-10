@@ -68,7 +68,7 @@ def check_code(path, text, base):
 
 
 def materialize(c, config, state, value, destination):
-    required = {"candidate_id", "parent_candidate_ids", "hypothesis_ids", "change", "expected_effect",
+    required = {"candidate_id", "plan_item_id", "parent_candidate_ids", "hypothesis_ids", "change", "expected_effect",
                 "falsification_condition", "estimated_gpu_seconds", "mechanism_test"}
     if not isinstance(value, dict) or set(value) != required:
         raise ValueError("候选必须声明谱系、改动、预期、反证与机制检验字段")
@@ -76,6 +76,15 @@ def materialize(c, config, state, value, destination):
     if not isinstance(key, str) or not key.startswith("C") or not key[1:].isdigit() or key in state["candidates"]:
         raise ValueError("新候选ID须为未使用的C数字")
     parents, hs = value["parent_candidate_ids"], value["hypothesis_ids"]
+    plan = state.get("plans", {}).get(value["plan_item_id"])
+    if not plan:
+        raise ValueError("候选须引用已登记的干预计划项")
+    prior_implementations = [node["candidate_id"] for node in state["candidates"].values()
+                             if node.get("plan_item_id") == value["plan_item_id"]]
+    for prior in prior_implementations:
+        tasks = [task for task in state["tasks"] if task.get("candidate_id") == prior]
+        if not tasks or any(task.get("scientific_valid") for task in tasks):
+            raise ValueError("同一干预计划已有可评估实现；科学细化须先登记新plan_item_id")
     if not isinstance(parents, list) or not parents or len(set(parents)) != len(parents):
         raise ValueError("必须显式声明不同父候选")
     if any(p not in state["candidates"] for p in parents):
@@ -90,6 +99,8 @@ def materialize(c, config, state, value, destination):
         raise ValueError("hypothesis_ids必须引用已登记方向")
     if any(state["hypotheses"][h]["status"] != "open" for h in hs):
         raise ValueError("方向已关闭或需要重新评估")
+    if plan["hypothesis_id"] not in hs or plan["parent_candidate_id"] not in parents:
+        raise ValueError("候选的假设/父候选须与干预计划一致")
     if any(not any(h in n.get("hypothesis_ids", []) for n in state["candidates"].values()) for h in hs) and parents != ["B0"]:
         raise ValueError("每个新假设的首个候选须从B0分叉")
     for name in ("expected_effect", "falsification_condition"):

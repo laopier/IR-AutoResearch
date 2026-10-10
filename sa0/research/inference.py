@@ -1,4 +1,4 @@
-"""Inference of a frozen V3 model; no validation/hidden labels accepted."""
+"""Inference of a frozen V4 model; no validation/hidden labels accepted."""
 import argparse
 import json
 from pathlib import Path

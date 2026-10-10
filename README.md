@@ -16,17 +16,16 @@ IR-drop 预测器与自主研究流程的学习、复现和实验管理仓库。
 
 ## 从哪里开始阅读
 
-当前训练前入口见[1000步与共享B0说明](PILOT_1000_SHARED_B0_20261008.md)：先准备B0 seed0/1/2，再让SA0/SA1复用。V3的low为200步，full与confirmation保持1000步。
+当前训练前入口见[1000步与共享B0说明](PILOT_1000_SHARED_B0_20261008.md)：先准备B0 seed0/1/2，再让SA0/SA1复用。V4的low为200步，full与confirmation保持1000步。
 
-最新默认SA0/SA1入口采用[假设驱动V3协议](sa0/RESEARCH_V3.md)：seed0漏斗、双seed聚合晋级、SA1首轮真实联网及严格full/confirmation。旧[假设驱动v2协议](sa0/RESEARCH_V2.md)保留作为历史说明：三个假设、显式谱系、
-旧筛选、模拟完整训练和三个seed确认设计。共享实现位于sa0/research/。
+最新默认SA0/SA1入口采用[假设驱动V4协议](sa0/RESEARCH_V4.md)：确定性研究卡片、先定位后实现、四方向seed0横向竞赛、父候选/B0双重比较、过程探针、停滞停止，以及严格full/confirmation。旧[V3协议](sa0/RESEARCH_V3.md)与[V2协议](sa0/RESEARCH_V2.md)保留作为历史说明。
+共享实现位于sa0/research/。
 旧config.json和研究轨迹保留，`--legacy`可访问旧入口。当前只允许本地workflow_validation。
 
 2026年10月6日版本为[导师讨论用代码快照](REVIEW_FREEZE_20261006.md)，任务额度和阶段门槛仍待讨论，
 不代表正式研究协议或最终模型已冻结。
 
-当前工作树另有[128/32预跑配置和独立full-selection](PILOT_RUN_20261007.md)。
-四组入口会等待数据审计通过；步数为low100、full500，仍只用于本地预跑。
+早期[128/32预跑配置和独立full-selection](PILOT_RUN_20261007.md)保留作历史记录；当前步数和预算以V4说明与research_config.json为准。
 
 | 位置 | 用途 |
 | --- | --- |

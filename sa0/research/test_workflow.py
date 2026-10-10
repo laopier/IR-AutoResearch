@@ -20,10 +20,28 @@ def initial_plan():
 
 
 def candidate(key="C1", parents=None, h=None, lr=.0008):
-    return {"candidate_id": key, "parent_candidate_ids": parents or ["B0"], "hypothesis_ids": h or ["H1"],
+    return {"candidate_id": key, "plan_item_id": f"P{key[1:]}",
+            "parent_candidate_ids": parents or ["B0"], "hypothesis_ids": h or ["H1"],
             "change": {"config": {"initial_lr": lr}, "edits": [], "resolved_sources": {}},
             "expected_effect": "MAE improves", "falsification_condition": "matched metrics worsen",
             "estimated_gpu_seconds": 1., "mechanism_test": None}
+
+
+def plan_for_candidate(value):
+    return {"plan_item_id": value["plan_item_id"], "hypothesis_id": value["hypothesis_ids"][0],
+            "parent_candidate_id": value["parent_candidate_ids"][0], "objective": "test one change",
+            "mechanism": "isolated mechanism", "delta": f"implement {value['candidate_id']}",
+            "pre_checks": ["shape and source contract"], "run_spec": "matched low run",
+            "probes": ["fixed validation probes"], "post_condition": "ranked metric improvement",
+            "rollback_condition": "matched regression"}
+
+
+def intervention_portfolio():
+    items = []
+    for index in range(1, 5):
+        value = candidate(f"C{index}", lr=.0002 + index * .0001)
+        items.append(plan_for_candidate(value))
+    return {"items": items, "selection_rationale": "four distinct localized tests"}
 
 
 class WorkflowTests(unittest.TestCase):
@@ -50,6 +68,7 @@ class WorkflowTests(unittest.TestCase):
         self.p["dataset_report"] = None
         self.p["baseline_cache_dir"] = None
         self.p.update(max_gpu_tasks=20, max_exploration_tasks=10)
+        self.p["portfolio"].update(min_seed0_before_seed1=1, stagnant_seed0_limit=99)
         self.p.update(session_dir=str(self.root / "session"), data_root=str(self.root / "data"), device="cpu")
         for spec in self.p["stages"].values():
             spec.update(train_manifest=str(self.root / "train.csv"), val_manifest=str(self.root / "val.csv"))
@@ -87,6 +106,8 @@ class WorkflowTests(unittest.TestCase):
                 "reported_tokens": 60, "usage": {"input_tokens": 50, "output_tokens": 10, "cached_input_tokens": 20}}))
             if "先返回{hypotheses" in prompt:
                 return initial_plan()
+            if "现在只做定位规划" in prompt:
+                return intervention_portfolio()
             if "解释实验T" in prompt:
                 return {"facts": "observed", "inference": "preliminary", "caveats": "not causal proof", "next_action": "continue"}
             if "只返回{report:" in prompt:
@@ -106,6 +127,11 @@ class WorkflowTests(unittest.TestCase):
         w.s["hypotheses"] = protocol.plan(initial_plan())
         w.s["phase"] = "exploration"
         return w
+
+    def add_candidate(self, w, value):
+        plan_id = value["plan_item_id"]
+        w.s.setdefault("plans", {})[plan_id] = plan_for_candidate(value)
+        w.action({"action": "candidate", "candidate": value})
 
     def full_actions(self):
         return [{"action": "candidate", "candidate": candidate()},
@@ -166,6 +192,46 @@ class WorkflowTests(unittest.TestCase):
         p["hypotheses"].pop()
         with self.assertRaises(ValueError):
             protocol.plan(p)
+
+    def test_v4_portfolio_is_separate_and_candidate_must_reference_it(self):
+        w = self.setup_workflow()
+        with self.assertRaisesRegex(ValueError, "干预计划"):
+            w.action({"action": "candidate", "candidate": candidate()})
+        value = intervention_portfolio()
+        plans = protocol.intervention_portfolio(value, w.s["hypotheses"], w.s["candidates"], 4)
+        self.assertEqual(list(plans), ["P1", "P2", "P3", "P4"])
+        w.s["plans"] = plans
+        w.action({"action": "candidate", "candidate": candidate()})
+        self.assertEqual(w.s["candidates"]["C1"]["plan_item_id"], "P1")
+
+    def test_seed1_waits_for_cross_candidate_ranking(self):
+        self.p["portfolio"].update(min_seed0_before_seed1=2, max_seed1_candidates=1)
+        w = self.setup_workflow()
+        self.add_candidate(w, candidate())
+        self.add_candidate(w, candidate("C2", lr=.0009))
+        with patch("sa0.research.session.execute_job", side_effect=self.fake_job), \
+             patch("sa0.research.session.agent.call", side_effect=self.fake_agent([])), patch("builtins.print"):
+            w.experiment("C1", "low", 0)
+            with self.assertRaisesRegex(ValueError, "至少2个"):
+                w.experiment("C1", "low", 1)
+            w.experiment("C2", "low", 0)
+            w.experiment("C1", "low", 1)
+        with self.assertRaisesRegex(ValueError, "排行榜"):
+            w.experiment("C2", "low", 1)
+
+    def test_derived_candidate_records_parent_and_b0_comparisons(self):
+        w = self.setup_workflow()
+        self.add_candidate(w, candidate())
+        self.add_candidate(w, candidate("C2", ["C1"], lr=.0009))
+        with patch("sa0.research.session.execute_job", side_effect=self.fake_job), \
+             patch("sa0.research.session.agent.call", side_effect=self.fake_agent([])), patch("builtins.print"):
+            parent = w.experiment("C1", "low", 0)
+            row = w.experiment("C2", "low", 0)
+        self.assertEqual(row["baseline_task_id"], "T001")
+        self.assertEqual(row["parent_task_id"], parent["task_id"])
+        self.assertIn("local_metric_delta", row)
+        with self.assertRaisesRegex(ValueError, "主父候选"):
+            w.experiment("C2", "low", 1)
         p = initial_plan()
         p["primary_hypothesis_id"] = "H8"
         with self.assertRaises(ValueError):
@@ -179,25 +245,25 @@ class WorkflowTests(unittest.TestCase):
 
     def test_inheritance_and_first_hypothesis_candidate(self):
         w = self.setup_workflow()
-        w.action({"action": "candidate", "candidate": candidate()})
-        w.action({"action": "candidate", "candidate": candidate("C2", ["C1"], lr=.001)})
+        self.add_candidate(w, candidate())
+        self.add_candidate(w, candidate("C2", ["C1"], lr=.001))
         self.assertEqual(w.s["candidates"]["C2"]["recipe"]["initial_lr"], .001)
         self.assertEqual(w.s["candidates"]["C2"]["parent_candidate_ids"], ["C1"])
         with self.assertRaises(ValueError):
-            w.action({"action": "candidate", "candidate": candidate("C3", ["C1"], ["H2"])})
+            self.add_candidate(w, candidate("C3", ["C1"], ["H2"]))
 
     def test_invalid_edit_is_transactional_and_can_be_corrected(self):
         w = self.setup_workflow()
         value = candidate()
         value["change"]["edits"] = [{"path": "train/mavi.py", "old": "missing", "new": "x"}]
         with self.assertRaises(ValueError):
-            w.action({"action": "candidate", "candidate": value})
+            self.add_candidate(w, value)
         self.assertFalse((self.root / "session/candidates/C1").exists())
-        w.action({"action": "candidate", "candidate": candidate()})
+        self.add_candidate(w, candidate())
 
     def test_full_rejects_single_seed_and_smoke_not_scientific(self):
         w = self.setup_workflow()
-        w.action({"action": "candidate", "candidate": candidate()})
+        self.add_candidate(w, candidate())
         with self.assertRaises(ValueError):
             w.experiment("C1", "full", 0)
         with patch("sa0.research.session.execute_job", side_effect=self.fake_job):
@@ -208,7 +274,7 @@ class WorkflowTests(unittest.TestCase):
 
     def test_cross_stage_comparison_rejected(self):
         w = self.setup_workflow()
-        w.action({"action": "candidate", "candidate": candidate()})
+        self.add_candidate(w, candidate())
         with patch("sa0.research.session.execute_job", side_effect=self.fake_job):
             a = w.job("B0", "low", 0)
             b = w.job("C1", "full", 0)
@@ -225,7 +291,7 @@ class WorkflowTests(unittest.TestCase):
 
     def test_failure_consumes_slot_but_does_not_refute_hypothesis(self):
         w = self.setup_workflow()
-        w.action({"action": "candidate", "candidate": candidate()})
+        self.add_candidate(w, candidate())
         with patch("sa0.research.session.execute_job", return_value={"status": "failed", "reason": "OOM", "process_seconds": 1}):
             w.job("C1", "low", 0)
         self.assertEqual(len(w.s["tasks"]), 1)
@@ -236,17 +302,17 @@ class WorkflowTests(unittest.TestCase):
         value = candidate()
         value["change"]["edits"] = [{"path": "prepare/evaluator.py", "old": "x", "new": "y"}]
         with self.assertRaises(ValueError):
-            w.action({"action": "candidate", "candidate": value})
+            self.add_candidate(w, value)
         value["change"]["edits"] = [{"path": "train/experiment.py", "old": "model = MAVI()", "new": "model = None"}]
         with self.assertRaises(ValueError):
-            w.action({"action": "candidate", "candidate": value})
+            self.add_candidate(w, value)
 
     def test_loss_optimizer_scheduler_recipe_and_feature_patch(self):
         w = self.setup_workflow()
         value = candidate()
         value["change"]["config"].update(loss={"name": "smooth_l1", "beta": .01}, optimizer={"name": "sgd", "momentum": .9}, scheduler={"name": "constant"})
         value["change"]["edits"] = [{"path": "train/feature_transform.py", "old": "return feature", "new": "return feature * 0.9"}]
-        w.action({"action": "candidate", "candidate": value})
+        self.add_candidate(w, value)
         self.assertEqual(w.s["candidates"]["C1"]["recipe"]["loss"]["name"], "smooth_l1")
 
     def test_two_wins_one_loss_can_pass_mean_gate(self):
@@ -257,7 +323,7 @@ class WorkflowTests(unittest.TestCase):
         cand[2]["final_metrics"]["mae_float"] = .3
         self.assertFalse(protocol.improved(protocol.mean_metrics(base), protocol.mean_metrics(cand)))
 
-    def test_v3_aggregate_gate_allows_small_single_seed_regression(self):
+    def test_v4_aggregate_gate_allows_small_single_seed_regression(self):
         gate = self.p["low_gate"]
         pairs = [
             (0, {"mae_float": .1000, "nrms_official": .2000, "ssim_official": .6000},
@@ -269,9 +335,35 @@ class WorkflowTests(unittest.TestCase):
         pairs[1][2]["mae_float"] = .1011
         self.assertFalse(protocol.aggregate_low_gate(pairs, gate))
 
+    def test_v4_screening_score_is_zero_for_b0_and_positive_for_joint_gain(self):
+        base = {"mae_float": .1, "nrms_official": .2, "ssim_official": .6}
+        weights = self.p["portfolio"]["score_weights"]
+        self.assertEqual(protocol.screening_score(base, base, weights), 0)
+        cand = {"mae_float": .09, "nrms_official": .19, "ssim_official": .61}
+        self.assertGreater(protocol.screening_score(base, cand, weights), 0)
+
+    def test_v4_leaderboard_uses_pareto_front_before_score(self):
+        w = self.setup_workflow()
+        for index in range(1, 4):
+            self.add_candidate(w, candidate(f"C{index}", lr=.0005 + index * .0001))
+        deltas = {
+            "C1": {"mae_float": -.02, "nrms_official": -.01, "ssim_official": .01},
+            "C2": {"mae_float": -.01, "nrms_official": 0., "ssim_official": 0.},
+            "C3": {"mae_float": -.03, "nrms_official": .01, "ssim_official": .02},
+        }
+        for index, (key, delta) in enumerate(deltas.items(), 1):
+            w.s["tasks"].append({"task_id": f"T{index:03d}", "candidate_id": key, "stage": "low",
+                                 "seed": 0, "status": "completed", "scientific_valid": True,
+                                 "screening_score": 100. - index, "screening_promising": True,
+                                 "metric_delta": delta})
+        board = {item["candidate_id"]: item for item in w.screening_leaderboard()}
+        self.assertEqual(board["C1"]["pareto_front"], 1)
+        self.assertEqual(board["C3"]["pareto_front"], 1)
+        self.assertEqual(board["C2"]["pareto_front"], 2)
+
     def test_seed1_requires_promising_completed_seed0(self):
         w = self.setup_workflow()
-        w.action({"action": "candidate", "candidate": candidate()})
+        self.add_candidate(w, candidate())
         with self.assertRaisesRegex(ValueError, "seed0"):
             w.experiment("C1", "low", 1)
         original = self.fake_job
@@ -358,26 +450,26 @@ class WorkflowTests(unittest.TestCase):
 
     def test_conflicting_combination_requires_resolution_and_evidence(self):
         w = self.setup_workflow()
-        w.action({"action": "candidate", "candidate": candidate()})
-        w.action({"action": "candidate", "candidate": candidate("C2", h=["H2"], lr=.0006)})
+        self.add_candidate(w, candidate())
+        self.add_candidate(w, candidate("C2", h=["H2"], lr=.0006))
         combined = candidate("C3", ["C1", "C2"], ["H1", "H2"], lr=.0007)
         with self.assertRaises(ValueError):
-            w.action({"action": "candidate", "candidate": combined})
+            self.add_candidate(w, combined)
         w.s["tasks"] = [{"task_id": "T1", "candidate_id": "C1", "scientific_valid": True, "metrics_ok": True},
                         {"task_id": "T2", "candidate_id": "C2", "scientific_valid": True, "metrics_ok": True}]
         broken = copy.deepcopy(combined)
         broken["change"]["config"] = {}
         with self.assertRaisesRegex(ValueError, "冲突"):
-            w.action({"action": "candidate", "candidate": broken})
-        w.action({"action": "candidate", "candidate": combined})
+            self.add_candidate(w, broken)
+        self.add_candidate(w, combined)
         self.assertEqual(w.s["candidates"]["C3"]["parent_candidate_ids"], ["C1", "C2"])
 
     def test_mechanistic_ablation_progress_can_support_promotion(self):
         w = self.setup_workflow()
-        w.action({"action": "candidate", "candidate": candidate()})
+        self.add_candidate(w, candidate())
         ablation = candidate("C2", ["C1"], lr=.00015)
         ablation["mechanism_test"] = {"reference_candidate_id": "C1", "metric": "mae_float", "direction": "increase", "min_delta": .01}
-        w.action({"action": "candidate", "candidate": ablation})
+        self.add_candidate(w, ablation)
         original = self.fake_job
         def job(owner, config, folder, workspace):
             row = original(owner, config, folder, workspace)
@@ -396,7 +488,7 @@ class WorkflowTests(unittest.TestCase):
     def test_three_no_progress_requires_review_not_automatic_close(self):
         w = self.setup_workflow()
         for i, lr in enumerate((.0008, .0009, .001), 1):
-            w.action({"action": "candidate", "candidate": candidate(f"C{i}", lr=lr)})
+            self.add_candidate(w, candidate(f"C{i}", lr=lr))
         original = self.fake_job
         def job(owner, config, folder, workspace):
             row = original(owner, config, folder, workspace)
@@ -430,7 +522,7 @@ class WorkflowTests(unittest.TestCase):
 
     def test_interrupted_task_counts_and_resume_does_not_auto_repeat(self):
         w = self.setup_workflow()
-        w.action({"action": "candidate", "candidate": candidate()})
+        self.add_candidate(w, candidate())
         with patch("sa0.research.session.execute_job", side_effect=KeyboardInterrupt), patch("builtins.print"):
             with self.assertRaises(KeyboardInterrupt):
                 w.job("C1", "low", 0)
@@ -447,9 +539,9 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             w.job("B0", "confirmation", 0)
 
-    def test_global_gpu_lock_rejects_concurrent_v3_worker(self):
+    def test_global_gpu_lock_rejects_concurrent_v4_worker(self):
         from sa0.research.session import execute_job
-        lock = self.root / "results/.research_v3_gpu_lock"
+        lock = self.root / "results/.research_v4_gpu_lock"
         lock.mkdir(parents=True)
         with session_lock(lock):
             with patch("sa0.research.session._execute_job") as worker:

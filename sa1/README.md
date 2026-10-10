@@ -1,8 +1,8 @@
 # SA1 联网自主研究
 
-默认入口已升级到共享假设驱动V3，读取sa1/research_config.json，详见[../sa0/RESEARCH_V3.md](../sa0/RESEARCH_V3.md)。旧V2说明见
-[共同协议](../sa0/RESEARCH_V2.md)。下文是旧版配置/结果说明，使用`--legacy`访问旧入口。
-当前V3的128/32预跑使用low200/full1000和强制full-selection；旧预跑配置保留在[历史说明](../PILOT_RUN_20261007.md)。
+默认入口已升级到共享假设驱动V4，读取sa1/research_config.json，详见[../sa0/RESEARCH_V4.md](../sa0/RESEARCH_V4.md)。旧V3/V2说明仅用于历史结果解释。
+下文是旧版配置/结果说明，使用`--legacy`访问旧入口。
+当前V4的128/32预跑使用low200/full1000、四方向seed0横向竞赛和强制full-selection；旧预跑配置保留在[历史说明](../PILOT_RUN_20261007.md)。
 
 入口：
 

@@ -67,11 +67,17 @@ def main():
         torch.cuda.reset_peak_memory_stats(device)
     started = time.perf_counter()
     iterator = iter(train)
+    probe_steps = set(config.get("probe_steps", [config["steps"]]))
+    if not probe_steps or any(type(step) is not int or not 1 <= step <= config["steps"] for step in probe_steps):
+        raise ValueError("probe_steps须为训练范围内的整数")
+    losses = []
+    validation_probes = []
     # Native candidate build_scheduler is honored when changed; B0 keeps official before-update cosine.
     custom_scheduler = None
     if not recipe.get("scheduler") and config.get("custom_scheduler"):
         custom_scheduler = training.build_scheduler(optimizer, config["lr_horizon_steps"])
-    with (out / "training.jsonl").open("x", encoding="utf-8") as log:
+    with (out / "training.jsonl").open("x", encoding="utf-8") as log, \
+         (out / "validation_probes.jsonl").open("x", encoding="utf-8") as probe_log:
         for step in range(config["steps"]):
             try:
                 feature, target, ids = next(iterator)
@@ -110,18 +116,37 @@ def main():
             parameters = [p for p in model.parameters() if p.requires_grad]
             if not all(p.grad is not None and torch.isfinite(p.grad).all() for p in parameters):
                 raise ValueError("缺失或非有限梯度")
+            grad_l2 = None
+            if step + 1 in probe_steps:
+                grad_l2 = math.sqrt(sum(float(torch.sum(p.grad.detach().float() ** 2)) for p in parameters))
             optimizer.step()
             if custom_scheduler:
                 custom_scheduler.step()
             entry = {"step": step + 1, "lr": lr, "loss": float(loss.detach()), "sample_ids": list(ids)}
+            losses.append(entry["loss"])
             log.write(json.dumps(entry, allow_nan=False) + "\n")
             log.flush()
             print(entry, flush=True)
+            if step + 1 in probe_steps:
+                if cuda:
+                    torch.cuda.synchronize(device)
+                probe_started = time.perf_counter()
+                metrics = validate(model, val, device)
+                if cuda:
+                    torch.cuda.synchronize(device)
+                probe = {"step": step + 1, "metrics": metrics,
+                         "recent_mean_loss": sum(losses[-25:]) / len(losses[-25:]),
+                         "grad_l2": grad_l2, "validation_seconds": time.perf_counter() - probe_started}
+                validation_probes.append(probe)
+                probe_log.write(json.dumps(probe, allow_nan=False) + "\n")
+                probe_log.flush()
+                print("validation_probe:", probe, flush=True)
     if cuda:
         torch.cuda.synchronize(device)
     seconds = time.perf_counter() - started
     peak = torch.cuda.max_memory_allocated(device) / 1024**2 if cuda else 0.
-    final = validate(model, val, device)
+    final = (validation_probes[-1]["metrics"] if validation_probes and validation_probes[-1]["step"] == config["steps"]
+             else validate(model, val, device))
     environment = {"python": platform.python_version(), "platform": platform.platform(), "torch": torch.__version__,
                    "numpy": np.__version__, "opencv": cv2.__version__, "cuda": torch.version.cuda,
                    "cudnn": torch.backends.cudnn.version(), "device": str(device),
@@ -133,6 +158,7 @@ def main():
     result = {**{k: config[k] for k in ("seed", "steps", "batch_size", "val_batch_size", "lr_horizon_steps")},
               "initial_lr": recipe["initial_lr"], "recipe": recipe, "initial_metrics": initial,
               "final_metrics": final, "training_seconds": seconds, "peak_allocated_mib": peak,
+              "validation_probes": validation_probes,
               "environment": environment, "optimizer": type(optimizer).__name__,
               "initialized_from": "fresh", "parameter_count": sum(p.numel() for p in model.parameters())}
     torch.save({"model": model.state_dict(), "optimizer": optimizer.state_dict(), "config": config,

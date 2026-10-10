@@ -65,6 +65,8 @@ class MAVI(torch.nn.Module):
         first = json.loads((self.root / "out/training.jsonl").read_text().splitlines()[0])
         self.assertEqual(first["lr"], .0002)
         self.assertEqual(result["steps"], 2)
+        self.assertEqual([item["step"] for item in result["validation_probes"]], [2])
+        self.assertTrue((self.root / "out/validation_probes.jsonl").is_file())
 
     def test_loss_optimizer_scheduler_overrides_and_frozen_inference(self):
         self.config["recipe"].update(loss={"name": "smooth_l1", "beta": .01, "scale": 100},

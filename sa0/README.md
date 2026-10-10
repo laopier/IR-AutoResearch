@@ -1,7 +1,7 @@
 # SA0 离线单 agent 自主研究
 
-默认入口已升级到假设驱动V3，读取research_config.json，详见[RESEARCH_V3.md](RESEARCH_V3.md)。
-当前128/32预跑与独立full-selection说明见[预跑配置](../PILOT_RUN_20261007.md)。
+默认入口已升级到假设驱动V4，读取research_config.json，详见[RESEARCH_V4.md](RESEARCH_V4.md)。旧[V3说明](RESEARCH_V3.md)仅用于历史结果解释。
+早期128/32预跑与独立full-selection说明见[历史配置](../PILOT_RUN_20261007.md)。
 下文的config.json/SA0_GUIDE.md是旧版流程说明，使用`--legacy`访问。
 
 ```bash

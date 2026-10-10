@@ -13,7 +13,7 @@ import tempfile
 import time
 
 from sa0.session import atomic_json, session_lock
-from sa0.research import protocol, lineage, agent
+from sa0.research import protocol, lineage, agent, cards
 
 
 def digest(value):
@@ -22,7 +22,7 @@ def digest(value):
 
 def execute_job(c, config, folder, workspace):
     if config.get("device", "cuda") == "cuda":
-        gpu_lock = c.ROOT / "results/.research_v3_gpu_lock"
+        gpu_lock = c.ROOT / "results/.research_v4_gpu_lock"
         gpu_lock.mkdir(parents=True, exist_ok=True)
         with session_lock(gpu_lock):
             return _execute_job(c, config, folder, workspace)
@@ -86,7 +86,7 @@ class Workflow:
         self.root.mkdir(parents=True, exist_ok=True)
         if self.state_path.exists():
             if self.c.read_json(self.root / "protocol.json") != self.p:
-                raise ValueError("v3协议变化，请使用新会话")
+                raise ValueError("v4协议变化，请使用新会话")
             self.s = self.c.read_json(self.state_path)
             self.check_contract()
             for call in self.s["calls"]:
@@ -127,14 +127,18 @@ class Workflow:
         files += [path.relative_to(self.c.ROOT).as_posix() for path in (self.c.ROOT / "sa0/research").glob("*.py")]
         self.c.write_json(self.root / "harness_hashes.json", {name: self.c.sha256(self.c.ROOT / name) for name in files})
         self.c.write_json(self.root / "source_hashes.json", self.c.source_hashes(base))
+        research_cards = cards.build(self.p, base)
+        self.c.write_json(self.root / "research_cards.json", research_cards)
+        (self.root / "RESEARCH_CARDS.md").write_text(cards.markdown(research_cards), encoding="utf-8")
         self.instructions = (self.c.ROOT / "sa0/research/PROMPT.md").read_text(encoding="utf-8")
         (self.root / "instructions.md").write_text(self.instructions, encoding="utf-8")
-        self.s = {"phase": "planning", "hypotheses": {}, "candidates": {
+        self.s = {"phase": "planning", "hypotheses": {}, "plans": {}, "candidates": {
             "B0": {"candidate_id": "B0", "parent_candidate_ids": [], "hypothesis_ids": [],
                    "recipe": {"initial_lr": self.p["baseline_initial_lr"]}, "workspace": str(base),
                    "source_hashes": self.c.source_hashes(base)}},
             "tasks": [], "calls": [], "interpretations": {}, "action_errors": 0,
-            "started_at": time.time(), "stop_reason": None, "finalist": None}
+            "started_at": time.time(), "stop_reason": None, "finalist": None,
+            "incumbent_candidate_id": "B0", "incumbent_score": 0.0, "stagnant_seed0_count": 0}
         self.save()
 
     def load_shared_baselines(self):
@@ -165,9 +169,14 @@ class Workflow:
             hashes.update(self.c.dataset_hashes({**self.p, **stage}))
         if hashes != self.c.read_json(self.root / "data_hashes.json"):
             raise RuntimeError("数据或阶段清单变化")
+        if cards.build(self.p, self.root / "frozen") != self.c.read_json(self.root / "research_cards.json"):
+            raise RuntimeError("研究卡片发生变化")
+        if ((self.root / "instructions.md").read_text(encoding="utf-8") !=
+                (self.c.ROOT / "sa0/research/PROMPT.md").read_text(encoding="utf-8")):
+            raise RuntimeError("冻结研究规则发生变化")
         expected = self.c.read_json(self.root / "harness_hashes.json")
         if {name: self.c.sha256(self.c.ROOT / name) for name in expected} != expected:
-            raise RuntimeError("执行代码变化，不能续跑v3旧会话")
+            raise RuntimeError("执行代码变化，不能续跑v4旧会话")
         for node in self.s["candidates"].values():
             if self.c.source_hashes(Path(node["workspace"])) != node["source_hashes"]:
                 raise RuntimeError("候选源码发生未登记修改")
@@ -191,14 +200,20 @@ class Workflow:
         context = {"mode": self.p["mode"], "condition": self.p["condition"],
                    "stage_specs": self.p["stages"], "task_limits": {"total": self.p["max_gpu_tasks"],
                        "exploration": self.p["max_exploration_tasks"], "screening": self.p.get("max_screening_tasks"),
-                       "full_reserve": self.p.get("full_task_reserve"), "max_full_candidates": self.p.get("max_full_candidates")},
+                       "full_reserve": self.p.get("full_task_reserve"), "max_full_candidates": self.p.get("max_full_candidates"),
+                       "portfolio": self.p["portfolio"]},
                    "low_gate": self.p["low_gate"],
                    "remaining_exploration_tasks": self.p["max_exploration_tasks"] - self.count("exploration"),
                    "remaining_gpu_tasks": self.p["max_gpu_tasks"] - len(self.s["tasks"]),
                    "phase": self.s["phase"], "eligible_full_candidates": self.eligible_full(),
                    "remaining_screening_tasks": self.screening_remaining(),
                    "full_task_reserve": self.p.get("full_task_reserve"),
-                   "hypotheses": self.s["hypotheses"], "candidates": self.s["candidates"],
+                   "hypotheses": self.s["hypotheses"], "intervention_plans": self.s.get("plans", {}),
+                   "candidates": self.s["candidates"], "screening_leaderboard": self.screening_leaderboard(),
+                   "incumbent": {"candidate_id": self.s.get("incumbent_candidate_id", "B0"),
+                                  "score": self.s.get("incumbent_score", 0.0),
+                                  "stagnant_seed0_count": self.s.get("stagnant_seed0_count", 0)},
+                   "research_cards": self.c.read_json(self.root / "research_cards.json"),
                    "last_action_error": self.s.get("last_action_error"),
                    "experiments": self.s["tasks"], "shared_baselines": self.s.get("external_baselines", []), "interpretations": self.s["interpretations"],
                    "prior_research": [self.c.read_json(Path(call["folder"]) / "research.json")
@@ -245,6 +260,48 @@ class Workflow:
     def eligible_full(self):
         return [key for key in self.s["candidates"] if key != "B0" and self.can_promote(key)]
 
+    def screening_leaderboard(self):
+        latest = {}
+        for task in self.s.get("tasks", []):
+            if (task.get("stage") == "low" and task.get("seed") == 0 and task.get("scientific_valid")
+                    and task.get("status") == "completed" and task.get("candidate_id") != "B0"
+                    and "screening_score" in task):
+                latest[task["candidate_id"]] = task
+        remaining = list(latest.values())
+        fronts = {}
+        front = 1
+        def dominates(a, b):
+            x, y = a["metric_delta"], b["metric_delta"]
+            no_worse = (x["mae_float"] <= y["mae_float"] and x["nrms_official"] <= y["nrms_official"]
+                        and x["ssim_official"] >= y["ssim_official"])
+            strict = (x["mae_float"] < y["mae_float"] or x["nrms_official"] < y["nrms_official"]
+                      or x["ssim_official"] > y["ssim_official"])
+            return no_worse and strict
+        while remaining:
+            current = [row for row in remaining if not any(dominates(other, row) for other in remaining if other is not row)]
+            for row in current:
+                fronts[row["task_id"]] = front
+            remaining = [row for row in remaining if row not in current]
+            front += 1
+        ranked = sorted(latest.values(), key=lambda row: (fronts[row["task_id"]], -row["screening_score"], row["task_id"]))
+        return [{"rank": index, "candidate_id": row["candidate_id"], "task_id": row["task_id"],
+                 "pareto_front": fronts[row["task_id"]], "score": row["screening_score"],
+                 "promising": bool(row.get("screening_promising")),
+                 "metric_delta": row.get("metric_delta"), "local_metric_delta": row.get("local_metric_delta")}
+                for index, row in enumerate(ranked, 1)]
+
+    def update_incumbent(self, row):
+        if row.get("stage") != "low" or row.get("seed") != 0 or "screening_score" not in row:
+            return
+        score = row["screening_score"]
+        if row.get("screening_promising") and score > self.s.get("incumbent_score", 0.0) + 1e-12:
+            self.s.update(incumbent_candidate_id=row["candidate_id"], incumbent_score=score,
+                          stagnant_seed0_count=0)
+            row["incumbent_advanced"] = True
+        else:
+            self.s["stagnant_seed0_count"] = self.s.get("stagnant_seed0_count", 0) + 1
+            row["incumbent_advanced"] = False
+
     def enter_full_selection(self, reason):
         self.s.update(phase="full_selection", screening_end_reason=reason)
         self.event("screening_closed", reason=reason, eligible=self.eligible_full())
@@ -256,6 +313,10 @@ class Workflow:
                 "val_batch_size": self.p["val_batch_size"], "lr_horizon_steps": self.p["lr_horizon_steps"],
                 "device": self.p.get("device", "cuda")}
         return digest({"candidate_id": key, "source": node["source_hashes"], "recipe": node["recipe"], "spec": spec})
+
+    def probe_steps(self, stage):
+        steps = self.p["stages"][stage]["steps"]
+        return sorted({max(1, min(steps, round(steps * fraction))) for fraction in self.p["probe_fractions"]})
 
     def job(self, key, stage, seed):
         if stage not in protocol.STAGES or key not in self.s["candidates"]:
@@ -299,6 +360,7 @@ class Workflow:
                   "batch_size": self.p["batch_size"], "val_batch_size": self.p["val_batch_size"],
                   "lr_horizon_steps": self.p["lr_horizon_steps"], "recipe": node["recipe"],
                   "workspace": str(workspace), "out_dir": str(folder / "artifacts"),
+                  "probe_steps": self.probe_steps(stage),
                   "worker_timeout_seconds": self.p["worker_timeout_seconds"], "device": self.p.get("device", "cuda"),
                   "custom_scheduler": changed_scheduler and scheduler_changed(self.root / "frozen/train/experiment.py", workspace / "train/experiment.py")}
         before = self.c.source_hashes(workspace)
@@ -322,6 +384,9 @@ class Workflow:
                     result["final_metrics"][metric]
                 row["artifact_hashes"] = {name: self.c.sha256(folder / "artifacts" / name)
                                           for name in ("result.json", "checkpoint.pt", "training.jsonl")}
+                probes = folder / "artifacts/validation_probes.jsonl"
+                if probes.is_file():
+                    row["artifact_hashes"]["validation_probes.jsonl"] = self.c.sha256(probes)
                 row["scientific_valid"] = stage != "smoke"
                 if stage == "smoke":
                     atomic_json(folder / "interpretation.json", {"labels": ["engineering_progress"],
@@ -377,6 +442,8 @@ class Workflow:
         item = {**answer, "task_id": row["task_id"], "labels": labels or ["no_progress"],
                 "observed_metrics": row["result"]["final_metrics"], "evidence_task_ids": [row["task_id"], row["baseline_task_id"]],
                 "mechanism_evidence_scope": "predeclared matched test; preliminary support, not causal proof" if mechanism else None}
+        if row.get("parent_task_id") and row["parent_task_id"] not in item["evidence_task_ids"]:
+            item["evidence_task_ids"].append(row["parent_task_id"])
         if mechanism:
             reference = self.s["candidates"][row["candidate_id"]]["mechanism_test"]["reference_candidate_id"]
             evidence = next(t for t in self.s["tasks"] if t["candidate_id"] == reference and t["stage"] == row["stage"] and t["seed"] == row["seed"] and t.get("scientific_valid"))
@@ -426,15 +493,37 @@ class Workflow:
                      if task["candidate_id"] == key and task["stage"] == "low" and task["seed"] == 0
                      and task["status"] == "completed" and task.get("scientific_valid")]
             if not seed0:
-                raise ValueError("V3漏斗要求先完成同候选low seed0")
+                raise ValueError("V4组合筛选要求先完成同候选low seed0")
             if not seed0[-1].get("screening_promising"):
                 raise ValueError("low seed0未通过宽松筛选门，禁止消耗seed1预算")
+            board = self.screening_leaderboard()
+            minimum = self.p["portfolio"]["min_seed0_before_seed1"]
+            tested_plans = {self.s["candidates"][item["candidate_id"]]["plan_item_id"] for item in board}
+            if len(tested_plans) < minimum:
+                raise ValueError(f"须先完成至少{minimum}个不同干预计划的low seed0横向筛选")
+            safe_board = [item for item in board if item["promising"]]
+            top = {item["candidate_id"] for item in safe_board[:self.p["portfolio"]["max_seed1_candidates"]]}
+            if key not in top:
+                raise ValueError("候选不在seed0排行榜晋级名额内，禁止提交seed1")
+            used = {task["candidate_id"] for task in self.s["tasks"]
+                    if task.get("stage") == "low" and task.get("seed") == 1 and task.get("candidate_id") != "B0"}
+            if key not in used and len(used) >= self.p["portfolio"]["max_seed1_candidates"]:
+                raise ValueError("seed1候选名额已用尽")
         if (stage != "full" or not self.p["full_selection_enabled"]) and any(self.s["hypotheses"][h]["status"] != "open" for h in self.s["candidates"][key]["hypothesis_ids"]):
             raise ValueError("方向须先重新评估")
         if stage == "full" and not self.can_promote(key):
             raise ValueError("尚未满足双seed聚合门或严格改善加匹配关键消融的晋级证据")
         baseline = None
+        parent = None
         if stage != "smoke":
+            primary_parent = self.s["candidates"][key]["parent_candidate_ids"][0]
+            if stage == "low" and primary_parent != "B0":
+                parent = next((task for task in reversed(self.s["tasks"])
+                               if task["candidate_id"] == primary_parent and task["stage"] == stage
+                               and task["seed"] == seed and task["status"] == "completed"
+                               and task.get("scientific_valid")), None)
+                if parent is None:
+                    raise ValueError("派生候选须先完成主父候选同阶段同seed实验，才能进行局部比较")
             # Reserve enough slots for both matched baseline and candidate before either launches.
             needed = sum(not any(t["signature"] == self.signature(k, stage, seed) and t["status"] == "completed" for t in self.s["tasks"] + self.s.get("external_baselines", [])) for k in ("B0", key))
             if needed > min(self.p["max_exploration_tasks"] - self.count("exploration"), self.p["max_gpu_tasks"] - len(self.s["tasks"])):
@@ -454,6 +543,13 @@ class Workflow:
                            screening_promising=(protocol.promising(baseline_metrics, candidate_metrics, self.p["low_gate"])
                                                 if stage == "low" else None),
                            decision={"keep": None, "budget_status": "workflow_validation"})
+                if stage == "low":
+                    row["screening_score"] = protocol.screening_score(
+                        baseline_metrics, candidate_metrics, self.p["portfolio"]["score_weights"])
+                    local = parent or baseline
+                    row.update(parent_task_id=local["task_id"], local_metrics_ok=self.compare(row, local),
+                               local_metric_delta=protocol.metric_delta(local["result"]["final_metrics"], candidate_metrics))
+                    self.update_incumbent(row)
             except ValueError as error:
                 row.update(scientific_valid=False, comparison_status="invalid", reason=str(error))
                 atomic_json(Path(row["folder"]) / "record.json", row)
@@ -484,8 +580,20 @@ class Workflow:
                 staged.rename(destination)
                 node["workspace"] = str(destination)
             self.s["candidates"][key] = node
+            self.s["plans"][node["plan_item_id"]].setdefault("candidate_ids", []).append(key)
             self.c.write_json(destination / "candidate.json", node)
             # Metadata is outside hashed source files (*.py).
+        elif action == "localize" and set(answer) == {"action", "plan", "evidence_task_ids", "novelty_reason"}:
+            evidence = answer["evidence_task_ids"]
+            if (not isinstance(evidence, list) or not evidence or not set(evidence) <= set(self.s["interpretations"])
+                    or not isinstance(answer["novelty_reason"], str) or not answer["novelty_reason"].strip()):
+                raise ValueError("新增干预计划须引用已解释证据并说明为何不重复")
+            item = protocol.plan_item(answer["plan"], self.s["hypotheses"], self.s["candidates"],
+                                      f"P{len(self.s['plans']) + 1}")
+            if item["plan_item_id"] in self.s["plans"]:
+                raise ValueError("干预计划ID已使用")
+            item.update(evidence_task_ids=evidence, novelty_reason=answer["novelty_reason"])
+            self.s["plans"][item["plan_item_id"]] = item
         elif action == "experiment" and set(answer) == {"action", "candidate_id", "stage", "seed"}:
             if self.p["full_selection_enabled"] and answer["stage"] == "full":
                 if answer["seed"] != 0 or not self.can_promote(answer["candidate_id"]):
@@ -518,7 +626,7 @@ class Workflow:
             h.setdefault("reviews", []).append(answer)
         elif action == "add_hypothesis" and set(answer) == {"action", "hypothesis", "evidence_task_ids", "novelty_reason"}:
             if len(self.s["hypotheses"]) >= 5:
-                raise ValueError("当前初始3个加最多2个新方向")
+                raise ValueError("V4最多保留5个研究方向")
             h = protocol.hypothesis(answer["hypothesis"])
             if h["hypothesis_id"] in self.s["hypotheses"] or not answer["novelty_reason"].strip():
                 raise ValueError("新方向须新ID及与原方向不同的理由")
@@ -640,7 +748,7 @@ class Workflow:
                 "environment": row["result"]["environment"], "task_config": self.c.read_json(Path(row["folder"]) / "experiment.json"),
                 "lineage": self.s["candidates"], "data_hashes": self.c.read_json(self.root / "data_hashes.json"),
                 "source_hashes": self.c.source_hashes(temp / "source"), "checkpoint_sha256": self.c.sha256(temp / "checkpoint.pt"),
-                "mode": self.p["mode"], "formal_keep": None, "selection_rule": "V3 seed0 funnel, paired-low aggregate gate, strict full and paired-confirmation mean",
+                "mode": self.p["mode"], "formal_keep": None, "selection_rule": "V4 localized portfolio, ranked seed0 funnel, parent+B0 comparisons, paired-low gate, strict full and confirmation",
                 "selection_reason": self.s.get("selection_reason", self.s.get("stop_reason")),
                 "confirmation": confirmation, "inference": "python -m sa0.research.inference --frozen FINAL --feature NPY --output NPY"})
             temp.rename(freeze)
@@ -663,7 +771,7 @@ class Workflow:
         token_totals = {field: sum(u.get(field, 0) for u in usage if isinstance(u, dict) and type(u.get(field, 0)) is int)
                         for field in ("input_tokens", "output_tokens", "cached_input_tokens", "reasoning_output_tokens")}
         unknown = sum(call.get("cli", {}).get("reported_tokens") is None for call in calls)
-        summary = {"version": 3, "condition": self.p["condition"], "mode": self.p["mode"], "phase": self.s["phase"],
+        summary = {"version": 4, "condition": self.p["condition"], "mode": self.p["mode"], "phase": self.s["phase"],
                    "stop_reason": self.s.get("stop_reason"), "gpu_task_attempts": len(self.s["tasks"]),
                    "exploration_attempts": self.count("exploration"), "finalization_attempts": self.count("finalization"),
                    "screening_attempts": self.bucket_count("screening"), "full_selection_attempts": self.bucket_count("full_selection"),
@@ -682,6 +790,11 @@ class Workflow:
                    "hidden_evaluation": "not_configured; requires independent evaluator", "frozen_candidate_id": self.s.get("frozen_candidate_id"),
                    "untested_hypotheses": self.s.get("untested_hypotheses", {}),
                    "pause_history": self.s.get("pause_history", []),
+                   "screening_leaderboard": self.screening_leaderboard(),
+                   "incumbent_candidate_id": self.s.get("incumbent_candidate_id", "B0"),
+                   "incumbent_score": self.s.get("incumbent_score", 0.0),
+                   "stagnant_seed0_count": self.s.get("stagnant_seed0_count", 0),
+                   "intervention_plans": self.s.get("plans", {}),
                    "hypotheses": self.s["hypotheses"], "tasks": self.s["tasks"], "candidate_lineage": self.s["candidates"]}
         atomic_json(self.root / "summary.json", summary)
         text = "# 本地研究流程报告\n\n" + json.dumps({k: v for k, v in summary.items() if k not in {"tasks", "candidate_lineage", "hypotheses"}}, ensure_ascii=False, indent=2)
@@ -711,11 +824,23 @@ class Workflow:
                     if base["status"] != "completed":
                         raise RuntimeError("起点基线失败，先检查资源")
                     plan_path = self.root / "research_plan.json"
-                    value = self.c.read_json(plan_path) if plan_path.exists() else self.ask("research_plan", "先返回{hypotheses:[H1,H2,H3三个对象],primary_hypothesis_id:H编号}。每个对象的全部字段见研究规则。")
+                    value = self.c.read_json(plan_path) if plan_path.exists() else self.ask("research_plan", "先返回{hypotheses:[H1开始连续编号的3～5个对象],primary_hypothesis_id:H编号}。每个对象的全部字段见研究规则。")
                     self.s["hypotheses"] = protocol.plan(value)
                     self.s["primary_hypothesis_id"] = value["primary_hypothesis_id"]
                     if not plan_path.exists():
                         self.c.write_json(plan_path, value)
+                    self.save()
+                if not self.s.get("plans") and self.s["phase"] in {"planning", "exploration"}:
+                    portfolio_path = self.root / "intervention_portfolio.json"
+                    count = self.p["portfolio"]["initial_items"]
+                    request = (f"现在只做定位规划，不写候选补丁。返回{{items:[恰好{count}个P1起连续编号的干预项],selection_rationale:文字}}。"
+                               "每项字段为plan_item_id,hypothesis_id,parent_candidate_id,objective,mechanism,delta,pre_checks,run_spec,probes,post_condition,rollback_condition；初始项均从B0分叉，覆盖有区分度的方向。")
+                    value = self.c.read_json(portfolio_path) if portfolio_path.exists() else self.ask("intervention_portfolio", request)
+                    self.s["plans"] = protocol.intervention_portfolio(
+                        value, self.s["hypotheses"], self.s["candidates"], count)
+                    self.s["portfolio_selection_rationale"] = value["selection_rationale"]
+                    if not portfolio_path.exists():
+                        self.c.write_json(portfolio_path, value)
                     self.s["phase"] = "exploration"
                     self.save()
                 # Analyze any completed experiment left pending across interruptions.
@@ -750,6 +875,13 @@ class Workflow:
                     else:
                         self.s["action_errors"] = 0
                         self.save()
+                    if (self.s["phase"] == "exploration"
+                            and self.s.get("stagnant_seed0_count", 0) >= self.p["portfolio"]["stagnant_seed0_limit"]):
+                        if self.p["full_selection_enabled"]:
+                            self.enter_full_selection("stagnant seed0 portfolio; no incumbent advance")
+                        else:
+                            self.s.update(phase="finalization", stop_reason="stagnant_seed0_portfolio")
+                        break
                     failed = [t for t in self.s["tasks"][-3:] if t["status"] not in {"completed", "running"}]
                     if len(failed) == 3 and len({t.get("reason") for t in failed}) == 1:
                         raise RuntimeError("连续相同工程错误，暂停处理资源或实现问题")
@@ -762,7 +894,7 @@ class Workflow:
                 raise
             finally:
                 self.report()
-                print("v3归档：", self.root / "summary.json", flush=True)
+                print("v4归档：", self.root / "summary.json", flush=True)
 
 
 def scheduler_changed(base, candidate):
@@ -774,10 +906,11 @@ def scheduler_changed(base, candidate):
 
 
 ACTION_SCHEMA = '''选择一个动作，仅返回JSON：
-1. {action:"candidate",candidate:{candidate_id:"C数字",parent_candidate_ids:["B0或C编号"],hypothesis_ids:["H编号"],change:{config:{initial_lr/ loss/optimizer/scheduler配置},edits:[{path,old,new}],resolved_sources:{}},expected_effect:文字,falsification_condition:文字,estimated_gpu_seconds:数值,mechanism_test:null或{reference_candidate_id:父候选,metric:mae_float/nrms_official/ssim_official,direction:increase/decrease,min_delta:非负数}}。
+1. {action:"candidate",candidate:{candidate_id:"C数字",plan_item_id:"已登记P编号",parent_candidate_ids:["B0或C编号"],hypothesis_ids:["H编号"],change:{config:{initial_lr/ loss/optimizer/scheduler配置},edits:[{path,old,new}],resolved_sources:{}},expected_effect:文字,falsification_condition:文字,estimated_gpu_seconds:数值,mechanism_test:null或{reference_candidate_id:父候选,metric:mae_float/nrms_official/ssim_official,direction:increase/decrease,min_delta:非负数}}。候选必须实现已登记计划，不能在此动作临时发明方向。
 配置loss支持{name:l1/mse/smooth_l1,scale,beta}，optimizer支持{name:adamw/adam/sgd,weight_decay,momentum}，scheduler支持{name:cosine/constant,min_lr}。不修改的字段省略。
 2. {action:"experiment",candidate_id,stage:"smoke/low/full",seed:0或1}；先广泛跑low seed0，仅screening_promising候选可跑seed1；full仅seed0，须通过双seed聚合门，或严格low改善加匹配关键消融证据。
 3. {action:"reconsider",hypothesis_id,decision:"continue/close",reason:文字,evidence_task_ids:[有效任务ID]}。
-4. {action:"add_hypothesis",hypothesis:全部假设字段,evidence_task_ids:[已分析任务ID],novelty_reason:文字}。
-5. {action:"finalize",reason:文字,untested_hypotheses:{H编号:未研究理由}}。
+4. {action:"localize",plan:{plan_item_id:"新P数字",hypothesis_id,parent_candidate_id,objective,mechanism,delta,pre_checks:[文字],run_spec:文字,probes:[文字],post_condition:文字,rollback_condition:文字},evidence_task_ids:[已分析任务ID],novelty_reason:文字}；只用于基于证据的细化/修复定位，先规划后实现。
+5. {action:"add_hypothesis",hypothesis:全部假设字段,evidence_task_ids:[已分析任务ID],novelty_reason:文字}。
+6. {action:"finalize",reason:文字,untested_hypotheses:{H编号:未研究理由}}。
 Agent自主选择方向，不强制覆盖；不要反复生成空候选或提交已完成实验。'''

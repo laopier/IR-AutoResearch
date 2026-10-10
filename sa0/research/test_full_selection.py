@@ -52,7 +52,7 @@ class FullSelectionTests(unittest.TestCase):
             w.s["phase"] = "planning"
             w.job("B0", "full", 0)
             w.s["phase"] = "exploration"
-            w.action({"action": "candidate", "candidate": fixtures.candidate()})
+            self.f.add_candidate(w, fixtures.candidate())
             w.experiment("C1", "low", 0)
             w.experiment("C1", "low", 1)
         return w
@@ -89,7 +89,7 @@ class FullSelectionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             w.job("C1", "low", 0)
         with self.assertRaises(ValueError):
-            w.action({"action": "candidate", "candidate": fixtures.candidate("C2", lr=.0009)})
+            self.f.add_candidate(w, fixtures.candidate("C2", lr=.0009))
 
     def test_cannot_finalize_eligible_candidates_before_full(self):
         w = self.screened()

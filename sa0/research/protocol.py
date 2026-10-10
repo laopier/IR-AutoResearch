@@ -12,8 +12,8 @@ def validate(config):
     p.setdefault("full_selection_enabled", False)
     if type(p["full_selection_enabled"]) is not bool:
         raise ValueError("full_selection_enabled须为布尔值")
-    if p.get("version") != 3 or p.get("condition") not in {"SA0", "SA1"}:
-        raise ValueError("需要version=3及SA0/SA1条件")
+    if p.get("version") != 4 or p.get("condition") not in {"SA0", "SA1"}:
+        raise ValueError("需要version=4及SA0/SA1条件")
     if p.get("mode") != "workflow_validation":
         raise ValueError("当前版本只开放本地流程验证；正式数据、资源预算与隐藏入口尚未冻结")
     for name in ("max_gpu_tasks", "max_exploration_tasks", "batch_size", "val_batch_size", "lr_horizon_steps"):
@@ -54,7 +54,7 @@ def validate(config):
     if p["condition"] == "SA0" and required:
         raise ValueError("SA0禁止要求联网检索")
     if p["condition"] == "SA1" and required != ["research_plan"]:
-        raise ValueError("SA1 V3必须在research_plan阶段真实检索")
+        raise ValueError("SA1 V4必须在research_plan阶段真实检索")
     gate = p.get("low_gate")
     if not isinstance(gate, dict) or set(gate) != {
         "seed0_max_regression", "promotion_mean_tolerance", "promotion_per_seed_max_regression"
@@ -72,6 +72,29 @@ def validate(config):
         raise ValueError("promotion_mean_tolerance须覆盖NRMS和SSIM")
     if any(type(value) not in (int, float) or not math.isfinite(value) or value < 0 for value in tolerances.values()):
         raise ValueError("promotion_mean_tolerance必须为非负有限数")
+    portfolio = p.get("portfolio")
+    if not isinstance(portfolio, dict) or set(portfolio) != {
+        "initial_items", "min_seed0_before_seed1", "max_seed1_candidates",
+        "stagnant_seed0_limit", "score_weights"
+    }:
+        raise ValueError("portfolio字段不完整")
+    for key in ("initial_items", "min_seed0_before_seed1", "max_seed1_candidates", "stagnant_seed0_limit"):
+        if type(portfolio[key]) is not int or portfolio[key] <= 0:
+            raise ValueError(f"portfolio.{key}须为正整数")
+    if not 4 <= portfolio["initial_items"] <= 6:
+        raise ValueError("初始干预组合须含4～6项")
+    if portfolio["min_seed0_before_seed1"] > portfolio["initial_items"]:
+        raise ValueError("seed1前置seed0数量不能超过初始组合大小")
+    weights = portfolio["score_weights"]
+    if not isinstance(weights, dict) or set(weights) != set(METRICS):
+        raise ValueError("score_weights须覆盖三项指标")
+    if any(type(value) not in (int, float) or not math.isfinite(value) or value < 0 for value in weights.values()) or sum(weights.values()) <= 0:
+        raise ValueError("score_weights须为非负有限数且总和大于0")
+    fractions = p.get("probe_fractions")
+    if (not isinstance(fractions, list) or not fractions or any(
+        type(value) not in (int, float) or not math.isfinite(value) or not 0 < value <= 1 for value in fractions
+    ) or fractions != sorted(set(fractions)) or fractions[-1] != 1):
+        raise ValueError("probe_fractions须为递增唯一的(0,1]列表且包含1")
     return p
 
 
@@ -91,6 +114,19 @@ def within_regression_caps(delta, caps):
 
 def promising(base, cand, gate):
     return within_regression_caps(metric_delta(base, cand), gate["seed0_max_regression"])
+
+
+def screening_score(base, cand, weights):
+    """Higher is better; zero is the matched B0 reference."""
+    delta = metric_delta(base, cand)
+    scale = {key: max(abs(base[key]), 1e-12) for key in METRICS}
+    terms = {
+        "mae_float": -delta["mae_float"] / scale["mae_float"],
+        "nrms_official": -delta["nrms_official"] / scale["nrms_official"],
+        "ssim_official": delta["ssim_official"] / scale["ssim_official"],
+    }
+    total = sum(weights.values())
+    return sum(weights[key] * terms[key] for key in METRICS) / total
 
 
 def aggregate_low_gate(pairs, gate):
@@ -116,7 +152,7 @@ def hypothesis(value, expected_id=None):
     if not isinstance(value, dict) or set(value) != required:
         raise ValueError("假设字段不完整或包含额外字段")
     if expected_id and value["hypothesis_id"] != expected_id:
-        raise ValueError("初始假设必须为H1/H2/H3")
+        raise ValueError("初始假设ID必须从H1连续编号")
     for key in required:
         if not isinstance(value[key], str) or not value[key].strip():
             raise ValueError(f"假设{key}必须为非空文字")
@@ -127,11 +163,57 @@ def plan(value):
     if not isinstance(value, dict) or set(value) != {"hypotheses", "primary_hypothesis_id"}:
         raise ValueError("计划必须包含hypotheses和primary_hypothesis_id")
     hs = value["hypotheses"]
-    if not isinstance(hs, list) or len(hs) != 3:
-        raise ValueError("开始时恰好三个假设")
+    if not isinstance(hs, list) or not 3 <= len(hs) <= 5:
+        raise ValueError("开始时须登记3～5个假设")
     result = {f"H{i}": hypothesis(h, f"H{i}") for i, h in enumerate(hs, 1)}
-    if len({(h["mechanism"].strip().casefold(), h["proposed_change"].strip().casefold()) for h in result.values()}) != 3:
+    if len({(h["mechanism"].strip().casefold(), h["proposed_change"].strip().casefold()) for h in result.values()}) != len(result):
         raise ValueError("初始假设不能仅换ID重复同一机制及改动")
     if value["primary_hypothesis_id"] not in result:
         raise ValueError("主方向不存在")
+    return result
+
+
+PLAN_ITEM_FIELDS = {
+    "plan_item_id", "hypothesis_id", "parent_candidate_id", "objective", "mechanism",
+    "delta", "pre_checks", "run_spec", "probes", "post_condition", "rollback_condition"
+}
+
+
+def plan_item(value, hypotheses, candidates, expected_id=None):
+    if not isinstance(value, dict) or set(value) != PLAN_ITEM_FIELDS:
+        raise ValueError("干预项字段不完整或包含额外字段")
+    key = value["plan_item_id"]
+    if (not isinstance(key, str) or not key.startswith("P") or not key[1:].isdigit()
+            or (expected_id is not None and key != expected_id)):
+        raise ValueError("plan_item_id须为连续P数字")
+    if value["hypothesis_id"] not in hypotheses:
+        raise ValueError("干预项须引用已登记假设")
+    if value["parent_candidate_id"] not in candidates:
+        raise ValueError("干预项父候选不存在")
+    for field in ("objective", "mechanism", "delta", "run_spec", "post_condition", "rollback_condition"):
+        if not isinstance(value[field], str) or not value[field].strip():
+            raise ValueError(f"干预项{field}须为非空文字")
+    for field in ("pre_checks", "probes"):
+        if (not isinstance(value[field], list) or not value[field]
+                or any(not isinstance(item, str) or not item.strip() for item in value[field])):
+            raise ValueError(f"干预项{field}须为非空文字列表")
+    return copy.deepcopy(value)
+
+
+def intervention_portfolio(value, hypotheses, candidates, expected_size):
+    if not isinstance(value, dict) or set(value) != {"items", "selection_rationale"}:
+        raise ValueError("干预组合须包含items和selection_rationale")
+    if not isinstance(value["selection_rationale"], str) or not value["selection_rationale"].strip():
+        raise ValueError("干预组合须说明选择理由")
+    items = value["items"]
+    if not isinstance(items, list) or len(items) != expected_size:
+        raise ValueError(f"初始干预组合须恰好包含{expected_size}项")
+    result = {}
+    for index, item in enumerate(items, 1):
+        parsed = plan_item(item, hypotheses, candidates, f"P{index}")
+        if parsed["parent_candidate_id"] != "B0":
+            raise ValueError("初始干预组合必须从B0分叉")
+        result[parsed["plan_item_id"]] = parsed
+    if len({(x["hypothesis_id"], x["delta"].strip().casefold()) for x in result.values()}) != len(result):
+        raise ValueError("初始干预组合不能重复同一假设和delta")
     return result
