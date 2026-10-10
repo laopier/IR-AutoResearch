@@ -834,10 +834,30 @@ class Workflow:
                     portfolio_path = self.root / "intervention_portfolio.json"
                     count = self.p["portfolio"]["initial_items"]
                     request = (f"现在只做定位规划，不写候选补丁。返回{{items:[恰好{count}个P1起连续编号的干预项],selection_rationale:文字}}。"
-                               "每项字段为plan_item_id,hypothesis_id,parent_candidate_id,objective,mechanism,delta,pre_checks,run_spec,probes,post_condition,rollback_condition；初始项均从B0分叉，覆盖有区分度的方向。")
-                    value = self.c.read_json(portfolio_path) if portfolio_path.exists() else self.ask("intervention_portfolio", request)
-                    self.s["plans"] = protocol.intervention_portfolio(
-                        value, self.s["hypotheses"], self.s["candidates"], count)
+                               "每项字段为plan_item_id,hypothesis_id,parent_candidate_id,objective,mechanism,delta,"
+                               "pre_checks:[至少一条非空文字],run_spec,probes:[至少一条非空文字],post_condition,rollback_condition；"
+                               "初始项均从B0分叉，覆盖有区分度的方向。")
+                    if portfolio_path.exists():
+                        value = self.c.read_json(portfolio_path)
+                        parsed = protocol.intervention_portfolio(
+                            value, self.s["hypotheses"], self.s["candidates"], count)
+                    else:
+                        error = None
+                        for attempt in range(1, 4):
+                            suffix = ("" if error is None else
+                                      f"\n上次返回未通过结构校验：{error}。这是第{attempt}/3次，请修正类型和非空字段后完整重发，不能省略任何字段。")
+                            value = self.ask("intervention_portfolio", request + suffix)
+                            try:
+                                parsed = protocol.intervention_portfolio(
+                                    value, self.s["hypotheses"], self.s["candidates"], count)
+                            except (ValueError, KeyError, TypeError) as invalid:
+                                error = str(invalid)
+                                self.event("invalid_intervention_portfolio", attempt=attempt, reason=error)
+                                continue
+                            break
+                        else:
+                            raise RuntimeError(f"干预组合连续三次无效：{error}")
+                    self.s["plans"] = parsed
                     self.s["portfolio_selection_rationale"] = value["selection_rationale"]
                     if not portfolio_path.exists():
                         self.c.write_json(portfolio_path, value)

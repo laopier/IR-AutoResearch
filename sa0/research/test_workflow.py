@@ -204,6 +204,38 @@ class WorkflowTests(unittest.TestCase):
         w.action({"action": "candidate", "candidate": candidate()})
         self.assertEqual(w.s["candidates"]["C1"]["plan_item_id"], "P1")
 
+    def test_v4_portfolio_normalizes_strings_and_retries_empty_lists(self):
+        value = intervention_portfolio()
+        value["items"][0]["pre_checks"] = "shape check"
+        value["items"][0]["probes"] = "metric curve"
+        parsed = protocol.intervention_portfolio(value, protocol.plan(initial_plan()),
+                                                 {"B0": {}}, 4)
+        self.assertEqual(parsed["P1"]["pre_checks"], ["shape check"])
+        self.assertEqual(parsed["P1"]["probes"], ["metric curve"])
+
+        calls = {"portfolio": 0}
+        def invoke(prompt, folder, settings):
+            folder.mkdir()
+            (folder / "record.json").write_text(json.dumps({"status": "completed", "seconds": .1,
+                "reported_tokens": 1, "usage": {"input_tokens": 1, "output_tokens": 0}}))
+            if "先返回{hypotheses" in prompt:
+                return initial_plan()
+            if "现在只做定位规划" in prompt:
+                calls["portfolio"] += 1
+                answer = intervention_portfolio()
+                if calls["portfolio"] == 1:
+                    answer["items"][0]["pre_checks"] = []
+                return answer
+            if "只返回{report:" in prompt:
+                return {"report": "done"}
+            return {"action": "finalize", "reason": "schema retry verified",
+                    "untested_hypotheses": {"H1": "not run", "H2": "not run", "H3": "not run"}}
+        with patch("sa0.research.session.execute_job", side_effect=self.fake_job), \
+             patch("sa0.research.session.agent.call", side_effect=invoke), patch("builtins.print"):
+            Workflow(c, self.p).run()
+        self.assertEqual(calls["portfolio"], 2)
+        self.assertEqual(c.read_json(self.root / "session/state.json")["phase"], "completed")
+
     def test_seed1_waits_for_cross_candidate_ranking(self):
         self.p["portfolio"].update(min_seed0_before_seed1=2, max_seed1_candidates=1)
         w = self.setup_workflow()

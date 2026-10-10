@@ -182,22 +182,25 @@ PLAN_ITEM_FIELDS = {
 def plan_item(value, hypotheses, candidates, expected_id=None):
     if not isinstance(value, dict) or set(value) != PLAN_ITEM_FIELDS:
         raise ValueError("干预项字段不完整或包含额外字段")
-    key = value["plan_item_id"]
+    result = copy.deepcopy(value)
+    key = result["plan_item_id"]
     if (not isinstance(key, str) or not key.startswith("P") or not key[1:].isdigit()
             or (expected_id is not None and key != expected_id)):
         raise ValueError("plan_item_id须为连续P数字")
-    if value["hypothesis_id"] not in hypotheses:
+    if result["hypothesis_id"] not in hypotheses:
         raise ValueError("干预项须引用已登记假设")
-    if value["parent_candidate_id"] not in candidates:
+    if result["parent_candidate_id"] not in candidates:
         raise ValueError("干预项父候选不存在")
     for field in ("objective", "mechanism", "delta", "run_spec", "post_condition", "rollback_condition"):
-        if not isinstance(value[field], str) or not value[field].strip():
+        if not isinstance(result[field], str) or not result[field].strip():
             raise ValueError(f"干预项{field}须为非空文字")
     for field in ("pre_checks", "probes"):
-        if (not isinstance(value[field], list) or not value[field]
-                or any(not isinstance(item, str) or not item.strip() for item in value[field])):
+        if isinstance(result[field], str) and result[field].strip():
+            result[field] = [result[field]]
+        if (not isinstance(result[field], list) or not result[field]
+                or any(not isinstance(item, str) or not item.strip() for item in result[field])):
             raise ValueError(f"干预项{field}须为非空文字列表")
-    return copy.deepcopy(value)
+    return result
 
 
 def intervention_portfolio(value, hypotheses, candidates, expected_size):
